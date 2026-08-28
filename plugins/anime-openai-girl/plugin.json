@@ -1,0 +1,25 @@
+{
+  "schema": "bile-workbench-plugin/v1",
+  "type": "theme",
+  "id": "anime-openai-girl",
+  "name": "二次元 OpenAI 少女",
+  "version": "1.0.0",
+  "author": "BILE Workbench preset",
+  "description": "青蓝、石墨和霓虹薄荷感的二次元助手主题；仅为视觉预设，与 OpenAI 无隶属关系。",
+  "glass": {
+    "material": "auto",
+    "tint": "#102D33",
+    "opacity": 0.74,
+    "blur": 22,
+    "border": "#36AAA8",
+    "glow": "#41D7C9"
+  },
+  "themes": {
+    "light": "themes/light.qss",
+    "dark": "themes/dark.qss"
+  },
+  "assets": {
+    "avatar": "assets/avatar.svg"
+  },
+  "tags": ["anime", "assistant", "cool", "openai-inspired"]
+}

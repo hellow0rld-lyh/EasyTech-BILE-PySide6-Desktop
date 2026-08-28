@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bile-workbench"
+version = "0.1.0"
+description = "A PySide6 workbench for EasyTech BILE animation triplets"
+readme = "README.md"
+authors = [{ name = "3136818780" }]
+requires-python = ">=3.11"
+dependencies = [
+  "PySide6>=6.8",
+  "Pillow>=10.0",
+  "numpy>=1.26",
+  "defusedxml>=0.7.1,<0.8",
+]
+
+[project.scripts]
+bile-workbench = "bile_workbench.app:run"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

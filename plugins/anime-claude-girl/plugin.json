@@ -1,0 +1,25 @@
+{
+  "schema": "bile-workbench-plugin/v1",
+  "type": "theme",
+  "id": "anime-claude-girl",
+  "name": "二次元 ClaudeAI 少女",
+  "version": "1.0.0",
+  "author": "BILE Workbench preset",
+  "description": "暖金、紫罗兰和纸张感的二次元助手主题；仅为视觉预设，与 Anthropic 无隶属关系。",
+  "glass": {
+    "material": "auto",
+    "tint": "#2A2030",
+    "opacity": 0.78,
+    "blur": 28,
+    "border": "#A974B6",
+    "glow": "#F2C878"
+  },
+  "themes": {
+    "light": "themes/light.qss",
+    "dark": "themes/dark.qss"
+  },
+  "assets": {
+    "avatar": "assets/avatar.svg"
+  },
+  "tags": ["anime", "assistant", "warm", "claude-inspired"]
+}

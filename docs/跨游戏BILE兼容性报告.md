@@ -1,0 +1,108 @@
+# 跨游戏 BILE 兼容性报告
+
+**版本：1.1（v2/v3/v4 与兵模组合根动画实证版）**  
+**开发者：3136818780（AI 辅助研究与文档整理）**  
+**更新日期：2026-08-21**
+
+## 结论摘要
+
+本轮验证将 BILE 的可复现范围从世界征服者4原包扩展至将军的荣耀1、将军的荣耀3、欧洲战争4、欧洲战争6、世界征服者3和世界征服者4扩展集。核心结论是：**v3/v4 共用同构六节容器；将军的荣耀1存在可严格读取的 v2 五节早期变体；而跨游戏兵模数量差异既可能发生在 BILE 根动画内部，也可能存在于 BIN 之外的上层实例化。**
+
+> “能够解析同一份 BIN”不等于“替换后在游戏中显示相同数量的单位”。将3 `unit_infantry` 的待机根动作本身是单兵精灵组合，世4对应的待机根动作则并发嵌套三份子动画，离线已分别呈现一人与三人。因此，三件套内部的组合层级已经可以解释部分跨游戏可见人数差异；具体格子的额外实例数仍必须由游戏内对照实验确认。
+
+| 数据集 | BILE 版本 | BIN 数 | 严格解析通过 | 完整三件套 | 顶层布局 | 当前编辑策略 |
+|---|---:|---:|---:|---:|---|---|
+| 将军的荣耀1 | v2 | 12 | 12 | 12 | 五节 | 只读。 |
+| 世界征服者3 | v3 | 46 | 46 | 40 | 六节 | v3/v4 保守编辑路径。 |
+| 欧洲战争4 | v3 | 16 | 16 | 16 | 六节 | v3/v4 保守编辑路径。 |
+| 将军的荣耀3 | v4 | 26，其中非 BILE 1 | 25 | 25 | 六节 | v3/v4 保守编辑路径。 |
+| 欧洲战争6 | v4 | 5 | 5 | 5 | 六节 | v3/v4 保守编辑路径。 |
+| 世界征服者4扩展集 | v4 | 23 | 23 | 22 | 六节 | v3/v4 保守编辑路径。 |
+
+逐文件清单由 [`research/cross_generation_asset_inventory.md`](../research/cross_generation_asset_inventory.md) 生成；先前将3、欧6、世3的完整逐文件审计仍保留于 [`research/cross_game_compatibility_probe.md`](../research/cross_game_compatibility_probe.md)。
+
+## v3/v4 六节兼容范围
+
+世界征服者3的 v3、欧洲战争4的 v3、将军的荣耀3/欧洲战争6/世界征服者4的 v4 均满足 20 字节头、6 个顶层节和相同顺序：
+
+```text
+BELE → BXDI → BMRF → BYAL → BMTI → BRTS
+```
+
+| 已实测约束 | v3 | v4 | 结论 |
+|---|---|---|---|
+| `header_size` | 20 | 20 | 公共头部约束。 |
+| `section_count` | 6 | 6 | 公共容器约束。 |
+| BELE / BXDI / BMRF / BYAL / BMTI 宽度 | 44 / 8 / 8 / 8 / 56 | 44 / 8 / 8 / 8 / 56 | 公共记录约束。 |
+| BRTS | UTF-8、NUL 终止、字节偏移寻址 | 同左 | 公共字符串约束。 |
+| 累计时间线 | 全部消费通过 | 全部消费通过 | 可复用 `BMTI → BYAL → BMRF → BXDI → BELE` 解码器。 |
+| 动画引用图 | 验证样本无环 | 验证样本无环 | 未来发现环时仍应诊断并截断预览。 |
+
+这项结果确认 v3/v4 在容器、引用关系和定长记录层高度同构；它不自动确认 `opaque_*` 保留字、`playback_mode` 的精确运行时行为或游戏运行时资源加载逻辑完全相同。
+
+## v2 五节兼容范围
+
+将军的荣耀1的 12 个样本全部使用：
+
+```text
+BELE → BMRF → BYAL → BMTI → BRTS
+```
+
+v2 与 v3/v4 的关键差异是**没有独立 BXDI 节**。12 个样本共同满足 BELE=48 字节、BMRF=12 字节、BYAL=8 字节、BMTI=56 字节；BELE 记录数等于 BMRF 记录数；BMTI 通道数与 BYAL 帧数可顺序、无剩余地消费 BMRF。BMRF 的候选读取是 `<u32 slot, s32 element_index, opaque_u32>`，第 `i` 条 BMRF 暂保守映射到第 `i` 条 BELE。
+
+| v2 能力 | 状态 | 原因 |
+|---|---|---|
+| 严格结构解析、引用边界与累计消费 | 支持 | 已覆盖全部 12 个样本。 |
+| XML/PNG 图集加载和代表帧渲染 | 支持 | 12 组三件套均通过。 |
+| GUI 高 DPI 深色预览与诊断 | 支持 | 见 `gui_general1_v2_readonly.png`。 |
+| JSON 全文档导出 | 支持 | 不修改源文件。 |
+| 关键帧、锚点、候选 BIN 与实验包写回 | 禁止 | v2 48 字节 BELE 的后半字段和写回兼容性尚无运行时实证。 |
+
+因此 v2 是**经过严格验证的只读兼容**，不是“已可安全编辑”的版本。结构候选约束和样本明细见 [`research/bile_v2_candidate_constraint_check.md`](../research/bile_v2_candidate_constraint_check.md) 与 [`research/bile_v2_timeline_candidate_probe.md`](../research/bile_v2_timeline_candidate_probe.md)。
+
+## XML、图集与三件套差异
+
+| 差异 | 出现数据集 | 兼容策略 | 源文件边界 |
+|---|---|---|---|
+| PNG / WebP | 各代样本 | 按同名基名匹配，统一 RGBA 离线渲染。 | 保持源图格式。 |
+| XML 声明与并列顶层节点 | 欧洲战争6 | 内存中移除声明并包装虚拟根。 | 不写入虚拟根。 |
+| XML 尾随 NUL 控制填充 | 世界征服者3 | 仅读取时剔除非法控制字符。 | 原 XML 不被清理。 |
+| 小数图集几何 | 欧洲战争6 | 保留浮点值，按覆盖像素边界裁切。 | 不自动回写 XML。 |
+| 图集项名含 `.png`、BMTI 名不含扩展名 | 多数据集 | 先精确匹配，再追加 `.png`。 | 未匹配项保留诊断。 |
+
+完整三件套数量比严格 BIN 解析数量少，是因为部分样本缺同名 XML 或图集；这类 BIN 的时间线仍可解析，但不能声称完成离线像素验证。
+
+## `def_motion` 与兵模组合层级
+
+两份 `def_motion.xml` 已只读审计。它们的 `Unit` 节点将模板名映射到资源基名 `res` 和具体 `Motion name`；它们**不直接携带每格兵模人数或坐标表**。对于本次 `unit_infantry`：将军的荣耀3的 115 个 Unit 变体对应 995 个唯一 Motion 名，世界征服者4的 90 个 Unit 变体对应 356 个唯一 Motion 名，均能精确命中各自 BILE 的动画元素。
+
+| Soldier 待机根动作 | BILE 版本 | 槽位/通道 | 并发子动画轨道最大值 | 直接精灵轨道最大值 | 离线画面 |
+|---|---:|---:|---:|---:|---|
+| 将军的荣耀3 `盟军通用普通士兵待机动画` | v4 | 60 / 19 | 0 | 19 | 一名完整步兵。 |
+| 世界征服者4 `通用普通步兵待机组合动画` | v4 | 48 / 3 | 3 | 0 | 三名完整步兵。 |
+
+![单个 def_motion 根动作的离线对照；未叠加游戏上层阵列](../research/unit_infantry_root_animation_comparison.png)
+
+这解释了用户观察到的现象中的关键部分：将3单兵三件套被世4成功加载后，根动作本身只包含一名步兵；世4组合三件套被将3成功加载后，根动作本身已包含三名步兵。若游戏画面出现四名或更多，则需要继续研究运行时的上层阵列、Army 类型或 special 绑定；现有 BIN/XML/`def_motion.xml` 无法独立得出完整上层规则。
+
+推荐的游戏内实验矩阵已写入 [`research/cross_game_unit_count_hypothesis.md`](../research/cross_game_unit_count_hypothesis.md)。其核心要求是每次只交换一个变量：固定 Army/地图/方向与上层配置，仅交换三件套；再反过来固定三件套，仅改变一个上层坐标位。这样才能从截图中分离根动画内部人数与上层实例数。
+
+## 播放字段与非 BILE 文件
+
+将3和世3新增样本支持 `initial_phase` 与嵌套播放关系的强推断，并显示 `playback_mode=1` 可出现在实际子动画轨道。不过结构分布不能证明 1/2 的精确运行时语义，工作台继续禁止 `playback_mode` 写回。
+
+将军的荣耀3 `ch_battle.bin` 以非 `BILE` 魔数开头，被准确标记为**非动画二进制跳过**，不计为 BILE 解析失败。正确策略是先验魔数、再严格执行所属版本的结构约束，绝不能把“同厂二进制”自动作为 BILE 容器。
+
+## 可复现命令
+
+```bash
+python3 tools/probe_cross_generation_assets.py
+python3 tools/verify_bile_v2_candidate_layout.py
+python3 tools/analyze_motion_definitions.py
+python3 tools/analyze_unit_infantry_composition.py
+python3 tools/render_unit_infantry_composition_comparison.py
+python3 tools/smoke_general1_v2_gui.py
+python3 -m unittest discover -s tests -v
+```
+
+这些命令只读分析验证目录；不会修改用户上传的游戏资源。全量回归当前为 **27/27 通过**，其中包括 v2 五节三件套渲染、将3/世4根动画组合画像、跨游戏组合实验包、阵列配置只读审计、组合回归案例元数据和既有 v3/v4 编辑导出测试。
