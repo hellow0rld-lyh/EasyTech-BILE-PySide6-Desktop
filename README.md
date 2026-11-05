@@ -23,6 +23,7 @@
 | 动画编辑中转 | 完成 | 导出完整 JSON；新补丁携带 expected-old 值；候选 BIN 经源 SHA-256、精确 changed-byte set、完整重解析和事务式原子发布；旧版补丁仍兼容。 |
 | Project Model / Edit Set | 核心完成 | reference-only 导入；project.json、外部资产引用、记录身份哈希与有序 before/after 字段操作；不复制原始资源、不编译 BIN。 |
 | Existing-BILE Overlay Compiler | 核心完成 | 按序重放 Edit Set；每步校验中间 BILE；计算最终 changed-byte union；只原子发布独立候选，源 BIN 永不原位写回。 |
+| Canonical Candidate Validation | 核心完成 | 独立重放 Edit Set 并逐字节比对候选；核验源身份、完整解析、Section 布局、changed-byte set 与验证期间文件稳定性；明确离线验证不等于游戏内通过。 |
 | BILE 完整结构重建 | 实验性/未开放 | 新建元素、增删帧和重排字符串需要更多游戏内回归。 |
 | 第一轮架构重构 | 完成 | 三件套资产、候选编辑工作流、工作区状态、预览/时间线控件和实验对话框已分层；`app.py` 从 1,072 行缩减至 849 行，解析与渲染语义保持冻结。 |
 | 文档驱动编辑器 | 完成 | `AnimationDocumentSession` 统一基线三件套、暂存显示文档、选择和槽位；检查器以保守编辑命令驱动，专用动画导航、画布、时间线、诊断和状态条共享快照。 |
@@ -79,6 +80,7 @@ python tools\render_regression.py
 | [`docs/BILE_安全写入与事务契约.md`](docs/BILE_安全写入与事务契约.md) | 原始字节镜像、expected-old、changed-byte set、候选原子发布与失败回滚。 |
 | [`docs/BILE_Project_Model_与_Edit_Set.md`](docs/BILE_Project_Model_与_Edit_Set.md) | reference-only 工程结构、记录身份、字段级 Edit Set、校验状态与编译边界。 |
 | [`docs/BILE_Overlay_Compiler.md`](docs/BILE_Overlay_Compiler.md) | Edit Set 顺序叠加、中间状态校验、最终 changed-byte union、原子候选发布与失败回滚。 |
+| [`docs/BILE_Canonical_Candidate_Validation.md`](docs/BILE_Canonical_Candidate_Validation.md) | 独立重放 Edit Set、候选完整字节比对、源/Project 稳定性与离线验证报告。 |
 | [`docs/迁移来源与权属审计.md`](docs/迁移来源与权属审计.md) | Reconstruction Animation Studio 成果的精确来源、哈希、迁移边界与许可证审计。 |
 | [`docs/工作台直接编辑与回归.md`](docs/工作台直接编辑与回归.md) | 关键帧/锚点直接编辑、撤销重做、比较图与安全导出流程。 |
 | [`docs/动画序列导出与游戏内验证.md`](docs/动画序列导出与游戏内验证.md) | GIF/APNG/PNG 序列导出、候选 BIN 回读验证、游戏内实验 ZIP 和人工回归流程。 |

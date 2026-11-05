@@ -13,6 +13,10 @@ from pathlib import Path
 from typing import Any
 
 from .raw_image import RawBileImage
+from .candidate_validation import (
+    CanonicalValidationReport,
+    validate_candidate_bytes,
+)
 from .safe_mutation import (
     BileMutationBuffer,
     BileMutationError,
@@ -54,6 +58,7 @@ class OverlayCompilationReport:
     changed_byte_offsets: tuple[int, ...]
     operations: tuple[OverlayOperationResult, ...]
     mutation_report: BileMutationReport
+    canonical_validation: CanonicalValidationReport
 
 
 def _metadata_object_digest(*payloads: dict[str, Any]) -> str:
@@ -231,6 +236,25 @@ def compile_project_candidate(
     ):
         raise OverlayCompilationError("候选准备期间 Project/Edit Set 或源身份发生变化")
 
+    canonical_validation = validate_candidate_bytes(
+        root, candidate_bytes, candidate_path=output
+    )
+    # The canonical validator independently replays the Edit Set. Recheck the
+    # metadata snapshot immediately before the publication gate.
+    publish_check = validate_project(root)
+    publish_root, publish_project, publish_assets, publish_identities, publish_edit_set = (
+        _load_project_files(root)
+    )
+    if (
+        publish_check.source_sha256 != initial_report.source_sha256
+        or publish_check.operation_count != initial_report.operation_count
+        or _metadata_object_digest(
+            publish_project, publish_assets, publish_identities, publish_edit_set
+        ) != loaded_metadata_digest
+        or _metadata_digest(publish_root, publish_project) != metadata_sha256
+    ):
+        raise OverlayCompilationError("规范校验后 Project/Edit Set 发生变化；拒绝发布候选")
+
     try:
         mutation = publish_verified_candidate(
             source_path,
@@ -254,4 +278,5 @@ def compile_project_candidate(
         changed_byte_offsets=mutation.changed_byte_offsets,
         operations=tuple(operation_results),
         mutation_report=mutation,
+        canonical_validation=canonical_validation,
     )
