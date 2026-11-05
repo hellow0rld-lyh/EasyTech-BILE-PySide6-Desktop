@@ -218,6 +218,11 @@ class AnimationDocumentSession:
         self._emit()
         return True
 
+    def refresh(self) -> None:
+        """在受控外部恢复暂存会话后刷新显示文档并通知所有视图。"""
+        self._refresh_document()
+        self._emit()
+
     def candidate_workflow(self) -> CandidateWorkflow:
         return CandidateWorkflow(
             self._workspace.bin_path,

@@ -50,11 +50,20 @@ class CandidateWorkflow:
     Project -> Edit Set -> Overlay Compiler -> Canonical Validation。
     """
 
-    def __init__(self, original_bin: str | Path, xml: str | Path, image: str | Path, atlas: Atlas, session: EditSession) -> None:
+    def __init__(
+        self,
+        original_bin: str | Path,
+        xml: str | Path,
+        image: str | Path,
+        atlas: Atlas,
+        session: EditSession,
+        project_service: ProjectWorkflowService | None = None,
+    ) -> None:
         self.original_bin = Path(original_bin)
         self.triplet = create_triplet(self.original_bin, xml, image)
         self.atlas = atlas
         self.session = session
+        self.project_service = project_service
         if self.session.source_path != self.original_bin:
             raise CandidateWorkflowError("编辑会话的源 BIN 与工作流目标 BIN 不一致")
 
@@ -71,6 +80,26 @@ class CandidateWorkflow:
     ) -> ProjectCandidateResult:
         """将当前 EditSession 映射为临时 Project，并通过规范管线生成候选。"""
         self.require_preflight()
+        if self.project_service is not None:
+            try:
+                self.project_service.sync_edit_session(self.session)
+                build = self.project_service.compile_candidate(
+                    output_path,
+                    overwrite=overwrite,
+                    track_artifact=False,
+                    remember_candidate=False,
+                )
+            except ProjectWorkflowError as exc:
+                raise CandidateWorkflowError(str(exc)) from exc
+            return ProjectCandidateResult(
+                Path(build.compilation.output_path),
+                build.snapshot.project_id,
+                build.snapshot.source_sha256,
+                build.validation.operation_count,
+                build.validation.candidate_sha256,
+                build.validation.changed_byte_offsets,
+                build.validation,
+            )
         with tempfile.TemporaryDirectory(prefix="bile-workbench-project-adapter-") as temp_dir:
             project_dir = Path(temp_dir) / "project"
             service = ProjectWorkflowService.import_source(
@@ -100,6 +129,11 @@ class CandidateWorkflow:
     def create_track_impact_evidence(self, output_dir: str | Path) -> TrackImpactEvidence:
         """为当前待提交的 BELE 编辑输出静态轨道引用范围，不替代游戏内验证。"""
         self.require_preflight()
+        if self.project_service is not None:
+            try:
+                self.project_service.sync_edit_session(self.session)
+            except ProjectWorkflowError as exc:
+                raise CandidateWorkflowError(str(exc)) from exc
         changed_keyframes = [int(change["index"]) for change in self.session.patch_payload()["keyframes"]]
         document = parse_file(self.original_bin)
         return write_track_impact_evidence(document, changed_keyframes, output_dir)

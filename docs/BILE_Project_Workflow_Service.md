@@ -93,6 +93,21 @@ print(build.snapshot.candidate.status)  # Current
 
 只导入相对原始 source 真正发生字节变化的字段；字段按稳定顺序生成操作。Undo/Redo 的中间步骤不会被误写成 Project 操作。空会话、no-op、错源或非空 Project 均拒绝。
 
+### 持久化 EditSession 同步与恢复
+
+桌面 Project 使用以下 API：
+
+- `sync_edit_session(session)`：把当前会话最终字段状态同步到已有 Project；支持重复同步、同字段后续修改，以及撤销到 source 后追加恢复操作。重复同步幂等，不删除历史。
+- `restore_edit_session(session)`：把 Project 中每个字段的最终值恢复到一个干净 EditSession；会话非 clean、source 路径或 SHA-256 不一致时拒绝。
+- `operation_history()`：按 sequence 返回只读操作历史。
+- `set_candidate_path(path)`：设置当前服务实例的候选输出路径；该路径不写入 Project schema。
+
+多字段同步先在临时 Project 副本中逐项追加并完整验证，再检查原 Project metadata 未发生变化，最后只原子替换 Edit Set 文件。中途失败时原 Project 不会留下半条操作链。若会话回到原始 source 值，会追加显式恢复操作；如果整个 overlay 最终与 source 完全相同，Overlay Compiler 会拒绝生成空候选。
+
+### 候选路径记忆
+
+`compile_candidate(..., remember_candidate=False)` 可为差异报告或实验包生成临时候选，同时保留服务实例原先选择的候选路径和状态。默认值为 True，桌面主候选编译会记住当前输出路径。
+
 ## 5. CandidateWorkflow 迁移
 
 现有 `CandidateWorkflow.compile_project_candidate()` 会：
@@ -103,7 +118,7 @@ print(build.snapshot.candidate.status)  # Current
 5. 在发布后执行 Canonical Candidate Validation；
 6. 返回候选哈希、changed-byte offsets 和离线验证报告。
 
-候选差异、实验包和回归案例均已改用这条管线。文档预览仍使用 `EditSession` 的临时候选，以避免把 Project 编译引入每次控件交互。
+候选差异、实验包和回归案例均已改用这条管线。桌面已打开持久化 Project 时，CandidateWorkflow 会先通过 `sync_edit_session()` 同步当前会话，再用该 Project 编译临时候选；未打开 Project 时仍使用临时 reference-only Project。文档预览仍使用 `EditSession` 的临时候选，以避免把 Project 编译引入每次控件交互。
 
 ## 6. 明确不做的事
 

@@ -90,6 +90,110 @@ class ProjectWorkflowServiceTests(unittest.TestCase):
     def test_candidate_path_states_are_explicit(self) -> None:
         self.assertEqual(ProjectWorkflowService(self.project).inspect().candidate.status, "NotConfigured")
         self.assertEqual(self.service.inspect().candidate.status, "Missing")
+        self.assertEqual(self.service.set_candidate_path(self.candidate).candidate.status, "Missing")
+        self.assertEqual(self.service.set_candidate_path(None).candidate.status, "NotConfigured")
+
+    def test_sync_edit_session_is_idempotent_and_tracks_later_changes(self) -> None:
+        session = EditSession(self.source)
+        try:
+            session.set_keyframe(0, {"x": 12.5}, 0xFFFFFFFF, 0)
+            first = self.service.sync_edit_session(session)
+            self.assertEqual(len(first), 1)
+            self.assertEqual(self.service.inspect().operation_count, 1)
+            self.assertEqual(self.service.sync_edit_session(session), ())
+
+            session.set_keyframe(0, {"x": 14.25}, 0xFFFFFFFF, 0)
+            second = self.service.sync_edit_session(session)
+            self.assertEqual(len(second), 1)
+            self.assertEqual(second[0]["before"], 12.5)
+            self.assertEqual(second[0]["after"], 14.25)
+            self.assertEqual(self.service.inspect().operation_count, 2)
+            build = self.service.compile_candidate(self.candidate)
+            self.assertEqual(RawBileImage.read(self.candidate).document.keyframes[0].x, 14.25)
+            self.assertEqual(build.snapshot.candidate.status, "Current")
+        finally:
+            session.close()
+
+    def test_sync_failure_does_not_partially_mutate_project(self) -> None:
+        import bile_workbench.project_workflow as module
+
+        session = EditSession(self.source)
+        try:
+            session.set_keyframe(0, {"x": 12.5, "y": 13.5}, 0xFFFFFFFF, 0)
+            original = (self.project / "metadata" / "edit-set.json").read_bytes()
+            real_append = module.append_edit_operation
+            calls = {"count": 0}
+
+            def fail_second_append(*args, **kwargs):
+                calls["count"] += 1
+                if calls["count"] == 2:
+                    raise ProjectWorkflowError("injected staging failure")
+                return real_append(*args, **kwargs)
+
+            with patch.object(module, "append_edit_operation", fail_second_append):
+                with self.assertRaisesRegex(ProjectWorkflowError, "原 Project 未改变"):
+                    self.service.sync_edit_session(session)
+            self.assertEqual(
+                (self.project / "metadata" / "edit-set.json").read_bytes(),
+                original,
+            )
+            self.assertEqual(self.service.inspect().operation_count, 0)
+        finally:
+            session.close()
+
+    def test_sync_clean_session_appends_revert_to_source(self) -> None:
+        source_x = RawBileImage.read(self.source).document.keyframes[0].x
+        session = EditSession(self.source)
+        try:
+            session.set_keyframe(0, {"x": 12.5}, 0xFFFFFFFF, 0)
+            self.service.sync_edit_session(session)
+            session.clear()
+            revert = self.service.sync_edit_session(session)
+            self.assertEqual(len(revert), 1)
+            self.assertEqual(revert[0]["after"], source_x)
+            self.assertEqual(self.service.inspect().operation_count, 2)
+            self.assertEqual(RawBileImage.read(self.source).document.keyframes[0].x, source_x)
+            self.assertEqual(self.service.inspect().candidate.status, "Missing")
+        finally:
+            session.close()
+
+    def test_restore_project_into_clean_edit_session(self) -> None:
+        self.service.append_edit(section="BELE", index=0, field="transform.x", after=12.5)
+        session = EditSession(self.source)
+        try:
+            restored = self.service.restore_edit_session(session)
+            self.assertIn(("BELE", 0, "transform.x"), restored)
+            self.assertTrue(session.dirty)
+            self.assertEqual(session.preview_document().keyframes[0].x, 12.5)
+            self.assertEqual(self.service.sync_edit_session(session), ())
+        finally:
+            session.close()
+
+    def test_restore_rejects_project_fields_not_exposed_by_desktop_edit_session(self) -> None:
+        self.service.append_edit(section="BMTI", index=0, field="name", after="unit")
+        session = EditSession(self.source)
+        try:
+            with self.assertRaisesRegex(ProjectWorkflowError, "尚不支持恢复 Project 字段：BMTI\\[0\\]\\.name"):
+                self.service.restore_edit_session(session)
+            self.assertFalse(session.dirty)
+        finally:
+            session.close()
+
+    def test_restore_refuses_dirty_edit_session(self) -> None:
+        session = EditSession(self.source)
+        try:
+            session.set_keyframe(0, {"x": 12.5}, 0xFFFFFFFF, 0)
+            with self.assertRaisesRegex(ProjectWorkflowError, "必须先处理当前暂存编辑"):
+                self.service.restore_edit_session(session)
+        finally:
+            session.close()
+
+    def test_operation_history_is_ordered_and_read_only(self) -> None:
+        self.service.append_edit(section="BELE", index=0, field="transform.x", after=12.5)
+        self.service.append_edit(section="BELE", index=0, field="transform.x", after=14.25)
+        history = self.service.operation_history()
+        self.assertEqual([operation["sequence"] for operation in history], [1, 2])
+        self.assertEqual([operation["after"] for operation in history], [12.5, 14.25])
 
     def test_inspect_rejects_project_metadata_drift_during_snapshot(self) -> None:
         import bile_workbench.project_workflow as module
@@ -221,6 +325,22 @@ class CandidateWorkflowIntegrationTests(unittest.TestCase):
         with self.assertRaises(CandidateWorkflowError):
             self.workflow.compile_project_candidate(self.candidate)
         self.assertEqual(self.candidate.read_bytes(), b"preserve me")
+
+    def test_candidate_workflow_syncs_to_persistent_project_without_stealing_candidate_path(self) -> None:
+        project = ProjectWorkflowService.import_source(self.source, self.root / "persistent-project")
+        project.set_candidate_path(self.root / "tracked-candidate.bin")
+        workflow = CandidateWorkflow(
+            self.source, self.xml, self.image, object(), self.session, project_service=project
+        )
+        workflow.require_preflight = lambda: None
+        result = workflow.compile_project_candidate(self.candidate)
+        self.assertEqual(result.validation.status, "OfflineValid")
+        self.assertEqual(project.inspect().operation_count, 1)
+        self.assertEqual(
+            project.inspect().candidate.path.casefold(),
+            str((self.root / "tracked-candidate.bin").absolute()).casefold(),
+        )
+        self.assertEqual(project.inspect().candidate.status, "Missing")
 
 
 if __name__ == "__main__":
