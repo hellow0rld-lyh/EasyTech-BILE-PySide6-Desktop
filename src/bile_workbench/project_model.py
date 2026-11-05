@@ -374,8 +374,8 @@ def _validate_edit_set(
         raise ProjectModelError("Edit Set schema 不匹配")
     if edit_set.get("structuralEditsAllowed") is not False:
         raise ProjectModelError("Project Edit Set 永远不允许结构性修改")
-    if edit_set.get("compilerState") != "PendingOverlayCompiler":
-        raise ProjectModelError("Edit Set 编译状态越过当前 WU-3 边界")
+    if edit_set.get("compilerState") not in {"PendingOverlayCompiler", "Available"}:
+        raise ProjectModelError("Edit Set compilerState 不受支持")
     if edit_set.get("sourceSha256") != image.sha256:
         raise ProjectModelError("Edit Set sourceSha256 与原始 BIN 不一致")
     if edit_set.get("sourceVersion") != image.document.header.version:
@@ -533,8 +533,10 @@ def import_bile_project(
             "playbackMode": "NoGo",
         },
         "compiler": {
-            "status": "PendingOverlayCompiler",
-            "writesBinary": False,
+            "status": "Available",
+            "writesBinary": True,
+            "candidateOnly": True,
+            "inPlaceWrite": False,
         },
         "validation": {
             "sourceParse": "Passed",
@@ -561,7 +563,7 @@ def import_bile_project(
         "state": "Empty",
         "operations": [],
         "structuralEditsAllowed": False,
-        "compilerState": "PendingOverlayCompiler",
+        "compilerState": "Available",
     }
     if references[0]["sha256"] != image.sha256 or references[0]["sizeBytes"] != len(image.data):
         raise ProjectModelError("读取 BIN 与建立 source reference 期间源文件发生变化")
@@ -726,12 +728,21 @@ def validate_project(project_dir: str | Path) -> ProjectValidationReport:
     ):
         raise ProjectModelError("Project writer capability 越过当前安全边界")
     compiler = project.get("compiler")
-    if (
-        not isinstance(compiler, dict)
-        or compiler.get("status") != "PendingOverlayCompiler"
-        or compiler.get("writesBinary") is not False
-    ):
-        raise ProjectModelError("WU-3 Project Model 不允许直接编译或写出 BIN")
+    if not isinstance(compiler, dict):
+        raise ProjectModelError("Project 缺少 compiler capability")
+    compiler_status = compiler.get("status")
+    if compiler_status == "PendingOverlayCompiler":
+        if compiler.get("writesBinary") is not False:
+            raise ProjectModelError("Pending Overlay Compiler 不得写出 BIN")
+    elif compiler_status == "Available":
+        if (
+            compiler.get("writesBinary") is not True
+            or compiler.get("candidateOnly") is not True
+            or compiler.get("inPlaceWrite") is not False
+        ):
+            raise ProjectModelError("Overlay Compiler 仅允许另存候选，禁止原位写回")
+    else:
+        raise ProjectModelError("Project compiler status 不受支持")
     expected_paths = {
         "assetManifest": "assets/manifest.json",
         "recordIdentities": "metadata/record-identities.json",

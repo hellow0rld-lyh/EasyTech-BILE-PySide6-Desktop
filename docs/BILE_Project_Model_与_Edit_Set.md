@@ -1,6 +1,6 @@
 # BILE Project Model / Edit Set v1
 
-状态：WU-3 核心实现完成
+状态：WU-3 Project Model 与 WU-4 Overlay Compiler 集成完成
 日期：2026-11-05
 模块：\`bile_workbench.project_model\`
 
@@ -8,15 +8,15 @@
 
 Project Model 是 BILE 原始文件与后续编辑意图之间的独立工程层。它不等同于 BILE，也不负责重新序列化 BILE。
 
-本轮只完成：
+WU-3 建立工程模型与 Edit Set；WU-4 在其上增加候选编译器。当前能力：
 
 - 从已有 BILE 创建 reference-only Project；
 - 为 Section、定长记录和 BRTS 字符串建立稳定身份；
 - 记录有序字段级 Edit Set；
 - 验证源 SHA-256、目标记录身份、before/after 原始 bit pattern 与操作链；
-- 明确后续 Overlay Compiler 的输入合同。
+- 通过 Overlay Compiler 按序重放操作，并将候选交给 Safe Mutation Engine 原子发布。
 
-本轮**不生成候选 BIN**，也不触碰 UI。
+Project Model 本身不生成 BIN；WU-4 编译器只生成独立候选 BIN，不触碰 UI，也不原位写回源文件。
 
 ## 2. Project 目录布局
 
@@ -169,7 +169,18 @@ append_edit_operation(
 report = validate_project("unit-project")
 \`\`\`
 
-这些 API 只创建/更新 Project metadata，不创建候选 BIN。
+前三个 API 只创建/更新 Project metadata；候选 BIN 由独立的 `compile_project_candidate()` 创建，且必须输出到 Project 目录之外：
+
+```python
+from bile_workbench.overlay_compiler import compile_project_candidate
+
+candidate = compile_project_candidate(
+    "unit-project",
+    "output/unit_candidate.bin",
+)
+```
+
+原始 source BIN 永远不能作为 output path。
 
 ## 8. 验证
 
@@ -187,4 +198,4 @@ report = validate_project("unit-project")
 - Project 目录拒绝覆盖；
 - SyntheticFixture 来源类型。
 
-WU-3 完成后，下一工作单元为 WU-4 Existing-BILE Overlay Compiler。它必须消费此 Edit Set，先验证再按序叠加，最终回到 Safe Mutation 的精确 changed-byte set 与原子候选发布门禁。当前 WU-3 不得提前声称可编译。
+WU-4 已消费此 Edit Set：逐操作核对 beforeRaw、应用 afterRaw、验证每个中间 BILE，并从最终 overlay 独立计算 changed-byte union。候选发布复用 Safe Mutation Engine；源 BIN 哈希复核、同目录暂存、原子发布和覆盖回滚均由底层门禁负责。下一工作单元为 WU-5 Canonical Validation。

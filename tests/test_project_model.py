@@ -105,7 +105,9 @@ class ProjectModelTests(unittest.TestCase):
         manifest = json.loads((self.project / "project.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["originKind"], "ImportedOriginal")
         self.assertTrue(manifest["source"]["bin"]["referenceOnly"])
-        self.assertEqual(manifest["compiler"]["writesBinary"], False)
+        self.assertEqual(manifest["compiler"]["writesBinary"], True)
+        self.assertTrue(manifest["compiler"]["candidateOnly"])
+        self.assertFalse(manifest["compiler"]["inPlaceWrite"])
 
     def test_import_references_optional_assets_without_copying_them(self) -> None:
         xml = self.source.with_suffix(".xml")
@@ -273,7 +275,7 @@ class ProjectModelTests(unittest.TestCase):
         import_bile_project(self.source, self.project)
         path = self.project / "project.json"
         payload = json.loads(path.read_text(encoding="utf-8"))
-        payload["compiler"]["writesBinary"] = True
+        payload["compiler"]["inPlaceWrite"] = True
         path.write_text(json.dumps(payload), encoding="utf-8")
         with self.assertRaises(ProjectModelError):
             validate_project(self.project)
