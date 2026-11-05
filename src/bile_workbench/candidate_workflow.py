@@ -17,6 +17,8 @@ from .bile_format import parse_file
 from .track_evidence import TrackImpactEvidence, write_track_impact_evidence
 from .preview_renderer import Atlas
 from .regression_case import create_regression_case
+from .candidate_validation import CanonicalValidationReport
+from .project_workflow import ProjectWorkflowService, ProjectWorkflowError
 
 
 class CandidateWorkflowError(ValueError):
@@ -30,8 +32,23 @@ class CandidateRegressionResult:
     package: ExperimentPackageResult
 
 
+@dataclass(frozen=True)
+class ProjectCandidateResult:
+    candidate_path: Path
+    project_id: str
+    source_sha256: str
+    operation_count: int
+    candidate_sha256: str
+    changed_byte_offsets: tuple[int, ...]
+    validation: CanonicalValidationReport
+
+
 class CandidateWorkflow:
-    """将一个 EditSession 与它的目标三件套绑定，形成可测试的候选交付流程。"""
+    """将一个 EditSession 与它的目标三件套绑定，形成可测试的候选交付流程。
+
+    预览仍使用 EditSession 的临时内存候选；差异、实验包和回归案例统一使用
+    Project -> Edit Set -> Overlay Compiler -> Canonical Validation。
+    """
 
     def __init__(self, original_bin: str | Path, xml: str | Path, image: str | Path, atlas: Atlas, session: EditSession) -> None:
         self.original_bin = Path(original_bin)
@@ -49,11 +66,35 @@ class CandidateWorkflow:
             raise CandidateWorkflowError(result.text)
         return result
 
-    def create_diff(self, animation_name: str, output_dir: str | Path, canvas_size: tuple[int, int] = (512, 384)) -> AnimationDifferenceResult:
+    def compile_project_candidate(
+        self, output_path: str | Path, *, overwrite: bool = False,
+    ) -> ProjectCandidateResult:
+        """将当前 EditSession 映射为临时 Project，并通过规范管线生成候选。"""
         self.require_preflight()
+        with tempfile.TemporaryDirectory(prefix="bile-workbench-project-adapter-") as temp_dir:
+            project_dir = Path(temp_dir) / "project"
+            service = ProjectWorkflowService.import_source(
+                self.original_bin, project_dir,
+                xml_path=self.triplet.xml_path, texture_path=self.triplet.image_path,
+            )
+            try:
+                operations = service.apply_edit_session(self.session)
+                build = service.compile_candidate(
+                    output_path, overwrite=overwrite, track_artifact=False,
+                )
+            except ProjectWorkflowError as exc:
+                raise CandidateWorkflowError(str(exc)) from exc
+            return ProjectCandidateResult(
+                Path(build.compilation.output_path), build.snapshot.project_id,
+                build.snapshot.source_sha256, len(operations),
+                build.validation.candidate_sha256,
+                build.validation.changed_byte_offsets, build.validation,
+            )
+
+    def create_diff(self, animation_name: str, output_dir: str | Path, canvas_size: tuple[int, int] = (512, 384)) -> AnimationDifferenceResult:
         with tempfile.TemporaryDirectory(prefix="bile-workbench-diff-") as temp_dir:
             candidate = Path(temp_dir) / "candidate.bin"
-            self.session.write_candidate(candidate)
+            self.compile_project_candidate(candidate)
             return compare_animation(self.original_bin, candidate, self.atlas, animation_name, Path(output_dir), canvas_size)
 
     def create_track_impact_evidence(self, output_dir: str | Path) -> TrackImpactEvidence:
@@ -64,35 +105,39 @@ class CandidateWorkflow:
         return write_track_impact_evidence(document, changed_keyframes, output_dir)
 
     def create_experiment_package(self, archive_path: str | Path) -> ExperimentPackageResult:
-        self.require_preflight()
         with tempfile.TemporaryDirectory(prefix="bile-workbench-export-") as temp_dir:
             temp = Path(temp_dir)
             patch_path = temp / "source_patch.json"
             candidate_path = temp / "candidate.bin"
             self.session.write_patch(patch_path)
-            self.session.write_candidate(candidate_path)
+            self.compile_project_candidate(candidate_path)
             return create_experiment_package(
-                self.original_bin, candidate_path, self.triplet.xml_path, self.triplet.image_path, archive_path, patch_path
+                self.original_bin, candidate_path, self.triplet.xml_path,
+                self.triplet.image_path, archive_path, patch_path,
             )
 
     def create_regression_case(
-        self,
-        case_dir: str | Path,
-        animation_name: str,
+        self, case_dir: str | Path, animation_name: str,
         target_slots: list[int] | None = None,
         canvas_size: tuple[int, int] = (512, 384),
     ) -> CandidateRegressionResult:
-        self.require_preflight()
         destination = Path(case_dir)
         with tempfile.TemporaryDirectory(prefix="bile-workbench-case-") as temp_dir:
             temp = Path(temp_dir)
             candidate = temp / "candidate.bin"
             patch = temp / "source_patch.json"
-            self.session.write_candidate(candidate)
             self.session.write_patch(patch)
-            diff = compare_animation(self.original_bin, candidate, self.atlas, animation_name, destination / "candidate_diff", canvas_size)
-            package = create_experiment_package(
-                self.original_bin, candidate, self.triplet.xml_path, self.triplet.image_path, destination / "game_experiment.zip", patch
+            self.compile_project_candidate(candidate)
+            diff = compare_animation(
+                self.original_bin, candidate, self.atlas, animation_name,
+                destination / "candidate_diff", canvas_size,
             )
-            create_regression_case(destination, self.original_bin, candidate, animation_name, diff.markdown_path, target_slots, package.archive_path)
+            package = create_experiment_package(
+                self.original_bin, candidate, self.triplet.xml_path,
+                self.triplet.image_path, destination / "game_experiment.zip", patch,
+            )
+            create_regression_case(
+                destination, self.original_bin, candidate, animation_name,
+                diff.markdown_path, target_slots, package.archive_path,
+            )
         return CandidateRegressionResult(destination, diff, package)
