@@ -21,6 +21,7 @@
 | PNG/WebP 与 XML 兼容 | 完成 | 同名 PNG/WebP、XML 声明、多顶层片段、尾随控制填充和小数图集几何均可只读加载并显式诊断。 |
 | 资源诊断 | 完成 | 动画引用图循环、播放模式、空轨道、图集缺图、参考点与跨游戏 BILE/XML 图集兼容性画像；可生成原始/候选逐槽位字段与像素热区差异报告。 |
 | 动画编辑中转 | 完成 | 导出完整 JSON；新补丁携带 expected-old 值；候选 BIN 经源 SHA-256、精确 changed-byte set、完整重解析和事务式原子发布；旧版补丁仍兼容。 |
+| Project Model / Edit Set | 核心完成 | reference-only 导入；project.json、外部资产引用、记录身份哈希与有序 before/after 字段操作；不复制原始资源、不编译 BIN。 |
 | BILE 完整结构重建 | 实验性/未开放 | 新建元素、增删帧和重排字符串需要更多游戏内回归。 |
 | 第一轮架构重构 | 完成 | 三件套资产、候选编辑工作流、工作区状态、预览/时间线控件和实验对话框已分层；`app.py` 从 1,072 行缩减至 849 行，解析与渲染语义保持冻结。 |
 | 文档驱动编辑器 | 完成 | `AnimationDocumentSession` 统一基线三件套、暂存显示文档、选择和槽位；检查器以保守编辑命令驱动，专用动画导航、画布、时间线、诊断和状态条共享快照。 |
@@ -75,6 +76,7 @@ python tools\render_regression.py
 | [`docs/BILE_动画格式技术说明.md`](docs/BILE_动画格式技术说明.md) | 可用于社区发布的格式规范、证据等级、字段表、时间线算法与风险边界。 |
 | [`docs/AI_动画中转格式使用说明.md`](docs/AI_动画中转格式使用说明.md) | AI JSON 中转、补丁白名单、提示词模板与校验流程。 |
 | [`docs/BILE_安全写入与事务契约.md`](docs/BILE_安全写入与事务契约.md) | 原始字节镜像、expected-old、changed-byte set、候选原子发布与失败回滚。 |
+| [`docs/BILE_Project_Model_与_Edit_Set.md`](docs/BILE_Project_Model_与_Edit_Set.md) | reference-only 工程结构、记录身份、字段级 Edit Set、校验状态与编译边界。 |
 | [`docs/迁移来源与权属审计.md`](docs/迁移来源与权属审计.md) | Reconstruction Animation Studio 成果的精确来源、哈希、迁移边界与许可证审计。 |
 | [`docs/工作台直接编辑与回归.md`](docs/工作台直接编辑与回归.md) | 关键帧/锚点直接编辑、撤销重做、比较图与安全导出流程。 |
 | [`docs/动画序列导出与游戏内验证.md`](docs/动画序列导出与游戏内验证.md) | GIF/APNG/PNG 序列导出、候选 BIN 回读验证、游戏内实验 ZIP 和人工回归流程。 |
