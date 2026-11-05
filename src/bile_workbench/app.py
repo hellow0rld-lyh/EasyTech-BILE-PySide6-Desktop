@@ -43,7 +43,7 @@ from .document_session import (
 )
 from .diagnostics import format_diagnostics
 from .edit_session import EditSession
-from .interchange import apply_patch, export_interchange
+from .interchange import apply_patch_report, export_interchange
 from .bile_scene_interchange import export_scene_interchange
 from .bile_scene_proposal import BileSceneProposalError, export_proposal_evidence as export_bile_scene_proposal_evidence, load_proposal, proposal_template as bile_scene_proposal_template
 from .bile_scene_proposal_apply import apply_scene_proposal
@@ -1312,10 +1312,37 @@ class MainWindow(QMainWindow):
         output_path, _ = QFileDialog.getSaveFileName(self, "另存修改后的 BIN", str(self.workspace.bin_path.with_stem(self.workspace.bin_path.stem + "_edited")), "BILE Animation (*.bin)")
         if not output_path:
             return
+        overwrite = False
+        if Path(output_path).exists():
+            answer = QMessageBox.question(
+                self,
+                "确认覆盖候选文件",
+                f"文件已存在：\n{output_path}\n\n是否原子替换？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                return
+            overwrite = True
         try:
-            apply_patch(self.workspace.bin_path, patch_path, output_path)
-            self.statusBar().showMessage(f"补丁已验证并写入：{Path(output_path).name}")
-            QMessageBox.information(self, "补丁已写入", "已完成结构重解析验证。请在原游戏中继续回归该实验文件。")
+            report = apply_patch_report(
+                self.workspace.bin_path,
+                patch_path,
+                output_path,
+                overwrite=overwrite,
+            )
+            changed_count = len(report.changed_byte_offsets)
+            self.statusBar().showMessage(
+                f"补丁已验证并写入：{Path(output_path).name}；变化字节 {changed_count}"
+            )
+            QMessageBox.information(
+                self,
+                "补丁已写入",
+                f"已完成 expected-old、精确 changed-byte set 与结构重解析验证。\n"
+                f"变化字节：{changed_count}\n"
+                f"候选 SHA-256：{report.output_sha256}\n\n"
+                "请在原游戏中继续回归该实验文件。",
+            )
         except (OSError, BileFormatError, ValueError) as exc:
             QMessageBox.critical(self, "补丁被拒绝", str(exc))
 
