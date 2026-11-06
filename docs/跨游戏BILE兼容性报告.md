@@ -19,7 +19,7 @@
 | 欧洲战争6 | v4 | 5 | 5 | 5 | 六节 | v3/v4 保守编辑路径。 |
 | 世界征服者4扩展集 | v4 | 23 | 23 | 22 | 六节 | v3/v4 保守编辑路径。 |
 
-逐文件清单由 [`research/cross_generation_asset_inventory.md`](../research/cross_generation_asset_inventory.md) 生成；先前将3、欧6、世3的完整逐文件审计仍保留于 [`research/cross_game_compatibility_probe.md`](../research/cross_game_compatibility_probe.md)。
+逐文件清单和早期逐文件审计属于内部研究工作材料，未随当前公开源码仓库分发。本报告保留公开发布时的样本数量摘要；不要把未随包提供的内部清单当作可由本仓库直接复现的文件。
 
 ## v3/v4 六节兼容范围
 
@@ -58,7 +58,7 @@ v2 与 v3/v4 的关键差异是**没有独立 BXDI 节**。12 个样本共同满
 | JSON 全文档导出 | 支持 | 不修改源文件。 |
 | 关键帧、锚点、候选 BIN 与实验包写回 | 禁止 | v2 48 字节 BELE 的后半字段和写回兼容性尚无运行时实证。 |
 
-因此 v2 是**经过严格验证的只读兼容**，不是“已可安全编辑”的版本。结构候选约束和样本明细见 [`research/bile_v2_candidate_constraint_check.md`](../research/bile_v2_candidate_constraint_check.md) 与 [`research/bile_v2_timeline_candidate_probe.md`](../research/bile_v2_timeline_candidate_probe.md)。
+因此 v2 是**经过严格验证的只读兼容**，不是“已可安全编辑”的版本。更细的结构候选约束与逐样本探针属于内部研究工作材料，未随当前公开源码仓库分发；本报告只保留公开发布时的摘要和明确的只读边界。
 
 ## XML、图集与三件套差异
 
@@ -81,11 +81,11 @@ v2 与 v3/v4 的关键差异是**没有独立 BXDI 节**。12 个样本共同满
 | 将军的荣耀3 `盟军通用普通士兵待机动画` | v4 | 60 / 19 | 0 | 19 | 一名完整步兵。 |
 | 世界征服者4 `通用普通步兵待机组合动画` | v4 | 48 / 3 | 3 | 0 | 三名完整步兵。 |
 
-![单个 def_motion 根动作的离线对照；未叠加游戏上层阵列](../research/unit_infantry_root_animation_comparison.png)
+> 历史离线对照图未随当前公开源码仓库分发。上表仅记录根动作内部的离线组合观察，不应直接推导游戏地图中的编队人数。
 
 这解释了用户观察到的现象中的关键部分：将3单兵三件套被世4成功加载后，根动作本身只包含一名步兵；世4组合三件套被将3成功加载后，根动作本身已包含三名步兵。若游戏画面出现四名或更多，则需要继续研究运行时的上层阵列、Army 类型或 special 绑定；现有 BIN/XML/`def_motion.xml` 无法独立得出完整上层规则。
 
-推荐的游戏内实验矩阵已写入 [`research/cross_game_unit_count_hypothesis.md`](../research/cross_game_unit_count_hypothesis.md)。其核心要求是每次只交换一个变量：固定 Army/地图/方向与上层配置，仅交换三件套；再反过来固定三件套，仅改变一个上层坐标位。这样才能从截图中分离根动画内部人数与上层实例数。
+后续游戏内实验应每次只交换一个变量：固定 Army/地图/方向与上层配置，仅交换三件套；再反过来固定三件套，仅改变一个上层坐标位。这样才能从截图中分离根动画内部组合与上层实例数。当前公开仓库不包含早期实验矩阵和私有样本。
 
 ## 播放字段与非 BILE 文件
 

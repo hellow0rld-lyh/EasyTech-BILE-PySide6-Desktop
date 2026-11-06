@@ -1,6 +1,13 @@
 # Changelog
 
-Notable changes to BILE Workbench are recorded here.
+Notable user-facing changes are recorded here. Versioned sections describe the corresponding tagged source; documentation-only changes made after a tag are listed under Unreleased.
+
+## [Unreleased]
+
+- Reworked the project README around installation, first use, supported workflows and explicit safety boundaries.
+- Added a categorized documentation index and removed links to research files that are not present in the public repository.
+- Clarified the published pre-release baseline and separated automated, desktop and in-game acceptance states.
+- Marked dated delivery and increment reports as historical snapshots.
 
 ## [0.1.0-rc.1] — 2026-11-06
 

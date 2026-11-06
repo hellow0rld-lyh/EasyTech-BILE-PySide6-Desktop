@@ -1,5 +1,7 @@
 # BILE Workbench：跨格式动画瑞士军刀时间线增量
 
+> **历史实现记录（2026-08-22）**：本文保留 BILE/Spine 时间线读取增量的阶段性结论与测试快照。文中的“下一阶段”是当时计划，不是当前待办；当前能力请以 README、docs/README.md 和具体技术契约为准。
+
 **交付版本：2026-08-22；定位：BILE 保守编辑工作台 + EasyTech Spine 新引擎完整结构审阅工作台。**
 
 本增量完成了项目此前最大的读取能力跃迁：欧7 Spine 3.8.99 与征2 Spine 4.1.x 不再只读取静态骨架，而是按各自官方 `SkeletonBinary.readAnimation` 顺序，从 skins 结束后的 event definitions 一直严格累计消费到文件末尾。新能力被接入既有 WPS/CAD 风格 Ribbon 与专业 Dock 工作区，并以统一只读 JSON 档案供人工审阅、社区研究和未来 AI/代码化动作提案使用。

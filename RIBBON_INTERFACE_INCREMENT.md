@@ -1,5 +1,7 @@
 # BILE Workbench：生产力 Ribbon 界面增量
 
+> **历史实现记录**：本文保留 Ribbon 界面增量交付时的设计、文件清单和测试快照。文中的版本范围、测试数字与截图是当时证据，不代表当前完整回归结果；当前能力请以 README、docs/README.md 和源码为准。
+
 **版本范围：** `py-workbench-evolution` 的 PySide6 桌面工作台界面增量。本文档对应 `BILE_Workbench_功能区界面增量包.zip`，该增量仅重构命令呈现与工作区组织；**不改变 BILE v2/v3/v4 的解析语义、写回白名单、候选工作流或游戏资源文件**。
 
 ## 设计结果
