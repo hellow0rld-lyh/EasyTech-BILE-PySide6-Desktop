@@ -81,7 +81,7 @@ class CanonicalCandidateValidationTests(unittest.TestCase):
         self.assertEqual(report.checks["candidateFileStableDuringValidation"], "NotApplicable")
         self.assertEqual(
             os.path.normcase(report.candidate_path),
-            os.path.normcase(str(self.root / "not-yet-published.bin")),
+            os.path.normcase(str((self.root / "not-yet-published.bin").resolve(strict=False))),
         )
 
     def test_different_but_structurally_valid_allowed_field_value_is_rejected(self) -> None:

@@ -85,7 +85,7 @@ class MainWindowProjectWorkflowTests(unittest.TestCase):
                 ), patch.object(QMessageBox, "critical") as critical:
                     window.open_project_dialog()
                 critical.assert_not_called()
-                self.assertEqual(window.workspace.bin_path, source)
+                self.assertEqual(window.workspace.bin_path, source.resolve(strict=True))
                 self.assertEqual(window.display_document.keyframes[0].x, 19.5)
                 self.assertTrue(window.edit_session.dirty)
                 self.assertEqual(window.project_service.inspect().operation_count, 1)

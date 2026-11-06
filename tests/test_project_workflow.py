@@ -338,7 +338,7 @@ class CandidateWorkflowIntegrationTests(unittest.TestCase):
         self.assertEqual(project.inspect().operation_count, 1)
         self.assertEqual(
             project.inspect().candidate.path.casefold(),
-            str((self.root / "tracked-candidate.bin").absolute()).casefold(),
+            str((self.root / "tracked-candidate.bin").resolve(strict=False)).casefold(),
         )
         self.assertEqual(project.inspect().candidate.status, "Missing")
 
