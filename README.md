@@ -3,6 +3,8 @@
 开发者：**3136818780**  
 许可证：[MIT](LICENSE)
 
+> 当前版本：`v0.1.0-rc.1`（Pre-release），Windows x64 未签名便携目录包。下载后校验 SHA-256、完整解压并运行 `BILEWorkbench.exe`。CI 自动化测试和打包不代表真实桌面交互或目标游戏内验收通过。详见 [产品治理](PRODUCT_GOVERNANCE.md) 与 [发布流程](RELEASE_PROCESS.md)。
+
 **BILE Workbench** 是针对 EasyTech 风格动画三件套的 Windows/Python/PySide6 工作台。它围绕同名 `.bin + .xml + .webp` 资源提供结构校验、动画预览、播放、时间线可视化、格式审计，以及面向 AI 的受限 JSON 中转补丁。
 
 > 当前版本的核心价值是：把原本不透明的 BILE BIN 转换为可完整解析、可离线预览、可回归测试、可安全提案编辑的资源格式。任何涉及增删元素、增删帧或游戏内发布的修改，仍应以原游戏运行时测试为准。

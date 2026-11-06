@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bile-workbench"
-version = "0.1.0"
+version = "0.1.0rc1"
 description = "A PySide6 workbench for EasyTech BILE animation triplets"
 readme = "README.md"
 authors = [{ name = "3136818780" }]
