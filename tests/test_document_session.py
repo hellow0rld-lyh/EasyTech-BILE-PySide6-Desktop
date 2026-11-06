@@ -19,6 +19,7 @@ from bile_workbench.document_session import (
 from bile_workbench.preview_renderer import load_atlas
 from bile_workbench.track_context import tracks_for_animation
 from bile_workbench.workbench_state import Workspace
+from external_fixtures import require_triplet
 
 
 def load_workspace(binary: Path) -> Workspace:
@@ -34,7 +35,9 @@ def load_workspace(binary: Path) -> Workspace:
 
 class AnimationDocumentSessionTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.workspace = load_workspace(ROOT / "sample_assets" / "anim_failure.bin")
+        sample = ROOT / "sample_assets" / "anim_failure.bin"
+        require_triplet(self, sample)
+        self.workspace = load_workspace(sample)
 
     def test_selection_snapshot_and_listener_share_one_state(self) -> None:
         session = AnimationDocumentSession(self.workspace)
@@ -103,7 +106,9 @@ class AnimationDocumentSessionTests(unittest.TestCase):
             self.assertEqual(session.snapshot.document.elements[2].y, -6.0)
         finally:
             session.close()
-        v2_workspace = load_workspace(ROOT / "cross_game_assets" / "general1" / "mtank.bin")
+        v2_source = ROOT / "cross_game_assets" / "general1" / "mtank.bin"
+        require_triplet(self, v2_source, label="private BILE v2 sample triplet")
+        v2_workspace = load_workspace(v2_source)
         v2 = AnimationDocumentSession(v2_workspace)
         try:
             with self.assertRaises(DocumentSessionError):

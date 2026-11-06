@@ -13,6 +13,7 @@ from bile_workbench.formation_config import parse_def_array_bytes
 from bile_workbench.preview_renderer import load_atlas
 from bile_workbench.ui_experiment_dialogs import format_formation_summary
 from bile_workbench.workbench_state import Workspace
+from external_fixtures import require_files
 
 
 class WorkbenchStateTests(unittest.TestCase):
@@ -21,6 +22,7 @@ class WorkbenchStateTests(unittest.TestCase):
         binary = assets / "anim_failure.bin"
         xml = assets / "anim_failure.xml"
         image = assets / "anim_failure.webp"
+        require_files(self, binary, xml, image, label="private BILE workbench triplet")
         workspace = Workspace.create(binary, xml, image, parse_file(binary), load_atlas(xml, image))
         self.assertEqual(workspace.bin_path, binary)
         self.assertEqual(workspace.xml_path, xml)

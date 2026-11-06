@@ -60,18 +60,29 @@ python -m bile_workbench.app
 .\packaging\build_windows.ps1
 ```
 
-产物会输出到 `dist\BILEWorkbench\BILEWorkbench.exe`。该脚本必须在 Windows 上执行，以生成目标平台可用的 Qt 插件和可执行文件。
+产物会输出到 `dist\BILEWorkbench\BILEWorkbench.exe`。脚本默认安装 `.[build]` 中的 PyInstaller 构建依赖，并生成包含 Qt 与 `plugins/` 主题资源的未签名 one-folder 包。必须在 Windows 上执行；它不会进行代码签名，也不替代真实桌面启动与游戏内验收。
 
 ## 验证
 
+公开源码回归不需要原版游戏资源，可在 Windows PowerShell 中执行：
+
 ```powershell
+python -m compileall -q src tests
+python -m pip check
 python -m unittest discover -s tests -v
+```
+
+没有随公开仓库分发的原版 BILE、跨游戏和 Spine 样本会被明确标记为 **Skip**，不会伪装成通过。公开 CI 只运行自包含测试；它不把缺少素材的真实样本测试算作通过。
+
+如果你拥有对应的本地测试素材，可额外运行以下历史集成回归脚本：
+
+```powershell
 python tools\test_bile_parser.py
 python tools\validate_triplets.py
 python tools\render_regression.py
 ```
 
-部分回归测试引用未随公开源码包分发的原游戏样本、跨游戏数据集和预打包主题文件；缺少这些外部夹具时，相关测试会失败或跳过，这不表示仓库包含这些素材。公开仓库可直接运行不依赖外部素材的解析安全、几何、命名和工作流单元测试。历史开发环境曾对 11 组 `anim_*` 样本执行完整解析和非空预览验证；这些结果仅作为历史记录，不随 MIT 源码重新分发原始素材。
+这些脚本依赖本地原版/跨游戏素材，不属于公开 CI 的默认测试集。GitHub Actions 会在 Windows 上对 Python 3.11、3.12、3.13 执行公开测试，并单独构建未签名的 Windows one-folder 桌面包。
 
 ## 文档
 

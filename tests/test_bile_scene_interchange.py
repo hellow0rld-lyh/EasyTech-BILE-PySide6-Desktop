@@ -8,6 +8,7 @@ from pathlib import Path
 
 from bile_workbench.bile_format import parse_file
 from bile_workbench.bile_scene_interchange import SCENE_SCHEMA, export_scene_interchange
+from external_fixtures import require_files
 
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLE = ROOT / "sample_assets" / "anim_failure.bin"
@@ -28,7 +29,10 @@ def _sha256(path: Path) -> str:
 class BileSceneInterchangeTests(unittest.TestCase):
     def _export(self, bin_path: Path, *, include_render_witnesses: bool = False) -> tuple[dict, Path, Path]:
         xml_path = bin_path.with_suffix(".xml")
-        image_path = _image_for(bin_path)
+        require_files(self, bin_path, xml_path, label="BILE scene export sample")
+        image_path = next((candidate for candidate in (bin_path.with_suffix(".webp"), bin_path.with_suffix(".png")) if candidate.is_file()), None)
+        if image_path is None:
+            self.skipTest(f"BILE scene export texture not attached: {bin_path.name}")
         before = (_sha256(bin_path), _sha256(xml_path), _sha256(image_path))
         with tempfile.TemporaryDirectory() as folder:
             output = Path(folder) / "scene.json"

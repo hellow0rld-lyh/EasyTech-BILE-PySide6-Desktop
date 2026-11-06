@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from bile_workbench.candidate_workflow import CandidateWorkflow, CandidateWorkflowError
 from bile_workbench.edit_session import EditSession
 from bile_workbench.preview_renderer import load_atlas
+from external_fixtures import require_files
 
 
 class CandidateWorkflowTests(unittest.TestCase):
@@ -20,6 +21,7 @@ class CandidateWorkflowTests(unittest.TestCase):
         self.binary = self.assets / "anim_failure.bin"
         self.xml = self.assets / "anim_failure.xml"
         self.image = self.assets / "anim_failure.webp"
+        require_files(self, self.binary, self.xml, self.image, label="private candidate workflow triplet")
 
     def _dirty_workflow(self) -> tuple[CandidateWorkflow, EditSession]:
         session = EditSession(self.binary)

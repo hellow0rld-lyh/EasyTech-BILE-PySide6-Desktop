@@ -8,6 +8,7 @@ from pathlib import Path
 
 from bile_workbench.spine_deform_evidence_export import export_deform_audit_evidence
 from bile_workbench.spine_workspace import create_pose_session, load_spine_static_workspace
+from external_fixtures import require_files
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,6 +16,9 @@ ZHENG2 = ROOT / "incoming/cross_era_20260822/征2测试/animation/[mini]form_mai
 
 
 class SpineDeformEvidenceExportTests(unittest.TestCase):
+    def setUp(self) -> None:
+        require_files(self, ZHENG2, label="private Spine deform evidence sample")
+
     def test_exports_hash_bound_readonly_deform_audit_without_source_mutation(self) -> None:
         before = ZHENG2.read_bytes()
         session = create_pose_session(load_spine_static_workspace(ZHENG2), "Wait")

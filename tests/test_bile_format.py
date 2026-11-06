@@ -23,12 +23,14 @@ from bile_workbench.interchange import SCHEMA, apply_patch, export_interchange
 from bile_workbench.preview_renderer import load_atlas, render_frame
 from bile_workbench.preflight import run_preflight
 from bile_workbench.sequence_export import export_sequence
+from external_fixtures import require_files
 
 
 class BileFormatTests(unittest.TestCase):
     def setUp(self) -> None:
         self.assets = ROOT / "sample_assets"
         self.sample = self.assets / "anim_failure.bin"
+        require_files(self, self.sample, self.assets / "anim_failure.xml", self.assets / "anim_failure.webp", label="private anim_failure sample triplet")
 
     def test_all_original_animation_samples_parse_and_consume_timelines(self) -> None:
         for path in sorted(self.assets.glob("anim_*.bin")):
@@ -42,6 +44,7 @@ class BileFormatTests(unittest.TestCase):
                 self.assertGreater(len(document.sprites), 0)
 
     def test_reference_backed_playback_fields_and_acyclic_sample_graphs(self) -> None:
+        require_files(self, self.assets / "anim_status.bin", label="private anim_status sample")
         for path in sorted(self.assets.glob("anim_*.bin")):
             with self.subTest(path=path.name):
                 document = parse_file(path)
@@ -157,6 +160,7 @@ class BileFormatTests(unittest.TestCase):
             session.close()
 
     def test_initial_phase_preflight_uses_real_nested_child_range(self) -> None:
+        require_files(self, self.assets / "anim_status.bin", self.assets / "anim_status.xml", self.assets / "anim_status.webp", label="private anim_status sample triplet")
         bin_path = self.assets / "anim_status.bin"
         atlas = load_atlas(self.assets / "anim_status.xml", self.assets / "anim_status.webp")
         document = parse_file(bin_path)
@@ -195,6 +199,7 @@ class BileFormatTests(unittest.TestCase):
             session.close()
 
     def test_atlas_reference_points_are_loaded_and_renderable(self) -> None:
+        require_files(self, self.assets / "anim_status.bin", self.assets / "anim_status.xml", self.assets / "anim_status.webp", label="private anim_status sample triplet")
         atlas = load_atlas(self.assets / "anim_status.xml", self.assets / "anim_status.webp")
         referenced = [region for region in atlas.regions.values() if region.refx != 0 or region.refy != 0]
         self.assertGreater(len(referenced), 0)
@@ -203,6 +208,7 @@ class BileFormatTests(unittest.TestCase):
         self.assertEqual(frame.size, (320, 240))
 
     def test_candidate_animation_difference_analysis(self) -> None:
+        require_files(self, self.assets / "anim_status.bin", self.assets / "anim_status.xml", self.assets / "anim_status.webp", label="private anim_status sample triplet")
         source = self.assets / "anim_status.bin"
         original = source.read_bytes()
         document = parse_file(source)

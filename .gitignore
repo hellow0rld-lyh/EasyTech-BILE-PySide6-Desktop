@@ -12,3 +12,11 @@ htmlcov/
 *.tmp
 .idea/
 .vscode/
+
+# User-supplied original/cross-game assets are local regression inputs, not source.
+sample_assets/
+cross_game_assets/
+incoming/
+
+# Optional generated theme archives; source presets live under plugins/.
+plugin_packages/
