@@ -78,10 +78,10 @@ class ThemePluginLoaderTests(unittest.TestCase):
                 ThemePluginLoader.load(archive_path)
 
     def test_bundled_preset_files_are_loadable(self) -> None:
-        package_dir = ROOT / "plugin_packages"
+        plugin_dir = ROOT / "plugins"
         for plugin_id in ("anime-claude-girl", "anime-openai-girl"):
             with self.subTest(plugin_id=plugin_id):
-                plugin = ThemePluginLoader.load(package_dir / f"{plugin_id}.bileplugin")
+                plugin = ThemePluginLoader.load(plugin_dir / plugin_id)
                 self.assertEqual(plugin_id, plugin.plugin_id)
                 self.assertTrue(plugin.avatar_data)
                 self.assertTrue(plugin.light_qss.strip())

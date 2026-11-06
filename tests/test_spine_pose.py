@@ -13,6 +13,7 @@ from bile_workbench.spine_atlas import load_spine_atlas
 from bile_workbench.spine38_format import Spine38Bone, Spine38RegionAttachment, Spine38Slot, SpineIkConstraint, SpineTransformConstraint, _Reader
 from bile_workbench.spine_pose import PoseAnimation, PoseFrame, PoseTrack, _interpolate, project_pose
 from bile_workbench.spine_pose_renderer import _apply_light_rgba, render_pose_layers
+from external_fixtures import require_files
 
 ROOT = Path(__file__).resolve().parents[1]
 EU7 = ROOT / "incoming/cross_era_20260822/欧7测试/animation/Arthur2.bin"
@@ -118,12 +119,14 @@ class SpinePoseProjectionTests(unittest.TestCase):
         self.assertTrue(any("控制点未捕获" in item for item in diagnostics))
 
     def test_eu7_pose_capture_retains_bezier_controls_when_present(self) -> None:
+        require_files(self, EU7, label="private EU7 Spine 3.8 sample")
         _static, animation = parse_spine38_pose_animation(EU7, "Wait")
         bezier_frames = [frame for track in animation.tracks for frame in track.frames if isinstance(frame.curve, tuple)]
         self.assertGreater(len(bezier_frames), 0)
         self.assertTrue(all(len(frame.curve[0]) == 4 for frame in bezier_frames))
 
     def test_eu7_supported_tracks_project_after_bezier_evaluation(self) -> None:
+        require_files(self, EU7, EU7.with_suffix(".atlas"), label="private EU7 Spine 3.8 sample and atlas")
         static, animation = parse_spine38_pose_animation(EU7, "Wait")
         pose = project_pose(static, animation, animation.duration * 0.5)
         self.assertGreater(len(animation.tracks), 0)
@@ -136,6 +139,7 @@ class SpinePoseProjectionTests(unittest.TestCase):
         self.assertFalse(any("bezier" in item for item in rendered.diagnostics), rendered.diagnostics)
 
     def test_real_deform_evidence_remains_readonly_and_partial_for_both_engines(self) -> None:
+        require_files(self, EU7_DEFORM, ZHENG2_DEFORM, label="private Spine deform evidence samples")
         cases = (
             (EU7_DEFORM, "Wait", parse_spine38_pose_animation),
             (ZHENG2_DEFORM, "Wait", parse_spine41_pose_animation),
@@ -158,6 +162,7 @@ class SpinePoseProjectionTests(unittest.TestCase):
             self.assertEqual(before, path.read_bytes(), path.name)
 
     def test_zheng2_setup_compatible_animation_can_be_coverage_complete(self) -> None:
+        require_files(self, ZHENG2, ZHENG2.with_suffix(".atlas"), label="private Zheng2 Spine 4.1 sample and atlas")
         static, animation = parse_spine41_pose_animation(ZHENG2, "Wait")
         pose = project_pose(static, animation, animation.duration * 0.5)
         self.assertGreater(len(animation.tracks), 0)

@@ -20,7 +20,12 @@
 | 根动画组合画像 | 完成 | 诊断直接精灵根动作与并发嵌套子动画根动作；已实证将3单兵根与世4三人组合根的结构差异，且明确不把该指标误报为游戏格子人数。 |
 | PNG/WebP 与 XML 兼容 | 完成 | 同名 PNG/WebP、XML 声明、多顶层片段、尾随控制填充和小数图集几何均可只读加载并显式诊断。 |
 | 资源诊断 | 完成 | 动画引用图循环、播放模式、空轨道、图集缺图、参考点与跨游戏 BILE/XML 图集兼容性画像；可生成原始/候选逐槽位字段与像素热区差异报告。 |
-| 动画编辑中转 | 完成 | 导出完整 JSON；应用只改已确认字段、带 SHA-256 防错源校验的保守补丁；可创建持久候选 BIN、游戏内回归案例与外部证据哈希台账。 |
+| 动画编辑中转 | 完成 | 导出完整 JSON；新补丁携带 expected-old 值；候选 BIN 经源 SHA-256、精确 changed-byte set、完整重解析和事务式原子发布；旧版补丁仍兼容。 |
+| Project Model / Edit Set | 核心完成 | reference-only 导入；project.json、外部资产引用、记录身份哈希与有序 before/after 字段操作；不复制原始资源、不编译 BIN。 |
+| Existing-BILE Overlay Compiler | 核心完成 | 按序重放 Edit Set；每步校验中间 BILE；计算最终 changed-byte union；只原子发布独立候选，源 BIN 永不原位写回。 |
+| Canonical Candidate Validation | 核心完成 | 独立重放 Edit Set 并逐字节比对候选；核验源身份、完整解析、Section 布局、changed-byte set 与验证期间文件稳定性；明确离线验证不等于游戏内通过。 |
+| Project Workflow Service | 核心完成 | 统一导入、校验、字段编辑、编译、候选追踪与失效状态；旧 CandidateWorkflow 的差异/实验包/回归案例已迁移到新管线，预览仍保留原临时会话。 |
+| Project Workflow UI | 已接入（离屏验收通过） | 工程菜单支持新建/打开/同步 Project、候选路径设置、编译、规范验证与操作历史；主界面显示 Edit Set/候选状态，打开或重载资源会恢复已同步预览；切换资源前会保护未同步编辑。PySide6 离屏 UI 回归通过，仍需真实桌面与目标游戏回归。 |
 | BILE 完整结构重建 | 实验性/未开放 | 新建元素、增删帧和重排字符串需要更多游戏内回归。 |
 | 第一轮架构重构 | 完成 | 三件套资产、候选编辑工作流、工作区状态、预览/时间线控件和实验对话框已分层；`app.py` 从 1,072 行缩减至 849 行，解析与渲染语义保持冻结。 |
 | 文档驱动编辑器 | 完成 | `AnimationDocumentSession` 统一基线三件套、暂存显示文档、选择和槽位；检查器以保守编辑命令驱动，专用动画导航、画布、时间线、诊断和状态条共享快照。 |
@@ -55,18 +60,29 @@ python -m bile_workbench.app
 .\packaging\build_windows.ps1
 ```
 
-产物会输出到 `dist\BILEWorkbench\BILEWorkbench.exe`。该脚本必须在 Windows 上执行，以生成目标平台可用的 Qt 插件和可执行文件。
+产物会输出到 `dist\BILEWorkbench\BILEWorkbench.exe`。脚本默认安装 `.[build]` 中的 PyInstaller 构建依赖，并生成包含 Qt 与 `plugins/` 主题资源的未签名 one-folder 包。必须在 Windows 上执行；它不会进行代码签名，也不替代真实桌面启动与游戏内验收。
 
 ## 验证
 
+公开源码回归不需要原版游戏资源，可在 Windows PowerShell 中执行：
+
 ```powershell
+python -m compileall -q src tests
+python -m pip check
 python -m unittest discover -s tests -v
+```
+
+没有随公开仓库分发的原版 BILE、跨游戏和 Spine 样本会被明确标记为 **Skip**，不会伪装成通过。公开 CI 只运行自包含测试；它不把缺少素材的真实样本测试算作通过。
+
+如果你拥有对应的本地测试素材，可额外运行以下历史集成回归脚本：
+
+```powershell
 python tools\test_bile_parser.py
 python tools\validate_triplets.py
 python tools\render_regression.py
 ```
 
-部分回归测试引用未随公开源码包分发的原游戏样本、跨游戏数据集和预打包主题文件；缺少这些外部夹具时，相关测试会失败或跳过，这不表示仓库包含这些素材。公开仓库可直接运行不依赖外部素材的解析安全、几何、命名和工作流单元测试。历史开发环境曾对 11 组 `anim_*` 样本执行完整解析和非空预览验证；这些结果仅作为历史记录，不随 MIT 源码重新分发原始素材。
+这些脚本依赖本地原版/跨游戏素材，不属于公开 CI 的默认测试集。GitHub Actions 会在 Windows 上对 Python 3.11、3.12、3.13 执行公开测试，并单独构建未签名的 Windows one-folder 桌面包。
 
 ## 文档
 
@@ -74,6 +90,13 @@ python tools\render_regression.py
 |---|---|
 | [`docs/BILE_动画格式技术说明.md`](docs/BILE_动画格式技术说明.md) | 可用于社区发布的格式规范、证据等级、字段表、时间线算法与风险边界。 |
 | [`docs/AI_动画中转格式使用说明.md`](docs/AI_动画中转格式使用说明.md) | AI JSON 中转、补丁白名单、提示词模板与校验流程。 |
+| [`docs/BILE_安全写入与事务契约.md`](docs/BILE_安全写入与事务契约.md) | 原始字节镜像、expected-old、changed-byte set、候选原子发布与失败回滚。 |
+| [`docs/BILE_Project_Model_与_Edit_Set.md`](docs/BILE_Project_Model_与_Edit_Set.md) | reference-only 工程结构、记录身份、字段级 Edit Set、校验状态与编译边界。 |
+| [`docs/BILE_Overlay_Compiler.md`](docs/BILE_Overlay_Compiler.md) | Edit Set 顺序叠加、中间状态校验、最终 changed-byte union、原子候选发布与失败回滚。 |
+| [`docs/BILE_Canonical_Candidate_Validation.md`](docs/BILE_Canonical_Candidate_Validation.md) | 独立重放 Edit Set、候选完整字节比对、源/Project 稳定性与离线验证报告。 |
+| [`docs/BILE_Project_Workflow_Service.md`](docs/BILE_Project_Workflow_Service.md) | Project 生命周期、EditSession 适配、候选追踪清单、陈旧候选检测与统一工作流 API。 |
+| [`docs/BILE_Project_UI_Workflow.md`](docs/BILE_Project_UI_Workflow.md) | 桌面工程菜单、Project 创建/打开/同步、候选编译/验证与状态显示的操作指南。 |
+| [`docs/迁移来源与权属审计.md`](docs/迁移来源与权属审计.md) | Reconstruction Animation Studio 成果的精确来源、哈希、迁移边界与许可证审计。 |
 | [`docs/工作台直接编辑与回归.md`](docs/工作台直接编辑与回归.md) | 关键帧/锚点直接编辑、撤销重做、比较图与安全导出流程。 |
 | [`docs/动画序列导出与游戏内验证.md`](docs/动画序列导出与游戏内验证.md) | GIF/APNG/PNG 序列导出、候选 BIN 回读验证、游戏内实验 ZIP 和人工回归流程。 |
 | [`docs/主题插件开发与安装.md`](docs/主题插件开发与安装.md) | 外部主题插件协议、文件夹/压缩包结构、QSS 双模式、导入和安全边界。 |

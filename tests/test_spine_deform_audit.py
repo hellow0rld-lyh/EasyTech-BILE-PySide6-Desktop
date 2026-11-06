@@ -5,6 +5,7 @@ from pathlib import Path
 
 from bile_workbench.spine41_timeline import parse_spine41_pose_animation
 from bile_workbench.spine_deform_audit import deform_audit_text
+from external_fixtures import require_files
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +15,7 @@ ZHENG2_NO_DEFORM = ROOT / "incoming/cross_era_20260822/征2测试/animation/[min
 
 class SpineDeformAuditTests(unittest.TestCase):
     def test_real_zheng2_audit_reports_evidence_and_preserves_source(self) -> None:
+        require_files(self, ZHENG2, label="private Zheng2 deform audit sample")
         before = ZHENG2.read_bytes()
         static, animation = parse_spine41_pose_animation(ZHENG2, "Wait")
         text = deform_audit_text(static, animation)
@@ -24,6 +26,7 @@ class SpineDeformAuditTests(unittest.TestCase):
         self.assertEqual(before, ZHENG2.read_bytes())
 
     def test_no_deform_animation_reports_empty_readonly_audit(self) -> None:
+        require_files(self, ZHENG2_NO_DEFORM, label="private Zheng2 no-deform sample")
         static, animation = parse_spine41_pose_animation(ZHENG2_NO_DEFORM, "Wait")
         self.assertFalse(animation.deform_evidence)
         self.assertEqual(deform_audit_text(static, animation), "Deform 审计：当前动画没有已捕获 deform evidence。")

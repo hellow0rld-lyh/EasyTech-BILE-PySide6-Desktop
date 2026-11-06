@@ -13,11 +13,14 @@ sys.path.insert(0, str(ROOT / "src"))
 from bile_workbench.bile_format import parse_file
 from bile_workbench.track_context import tracks_for_animation
 from bile_workbench.track_evidence import build_track_impact_evidence, write_track_impact_evidence
+from external_fixtures import require_files
 
 
 class TrackEvidenceTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.document = parse_file(ROOT / "sample_assets" / "anim_failure.bin")
+        sample = ROOT / "sample_assets" / "anim_failure.bin"
+        require_files(self, sample, label="private BILE track evidence sample")
+        self.document = parse_file(sample)
         self.context = tracks_for_animation(self.document, self.document.animations[0].index)[0]
 
     def test_builds_static_reference_scope_for_real_bele(self) -> None:

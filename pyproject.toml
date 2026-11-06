@@ -16,6 +16,9 @@ dependencies = [
   "defusedxml>=0.7.1,<0.8",
 ]
 
+[project.optional-dependencies]
+build = ["pyinstaller>=6.11,<7"]
+
 [project.scripts]
 bile-workbench = "bile_workbench.app:run"
 

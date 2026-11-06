@@ -12,6 +12,7 @@ from bile_workbench.bile_scene_proposal_apply import apply_scene_proposal
 from bile_workbench.document_session import AnimationDocumentSession
 from bile_workbench.preview_renderer import load_atlas
 from bile_workbench.workbench_state import Workspace
+from external_fixtures import require_triplet
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +26,10 @@ def _v4_session() -> AnimationDocumentSession:
 
 
 class BileSceneProposalTests(unittest.TestCase):
+    def setUp(self) -> None:
+        if self._testMethodName in {"test_template_is_bound_candidate_only_and_loadable", "test_evidence_exports_accepted_candidate_without_binary_writeback"}:
+            require_triplet(self, ROOT / "sample_assets" / "anim_failure.bin")
+
     def test_accepts_only_bound_v3_v4_whitelist_intents(self) -> None:
         proposal = parse_proposal({
             "schema": PROPOSAL_SCHEMA,

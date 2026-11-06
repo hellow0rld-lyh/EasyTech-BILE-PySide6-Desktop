@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from bile_workbench.bile_format import parse_file
 from bile_workbench.track_context import TrackContextError, active_tracks_at_slot, keyframe_contexts, tracks_for_animation
+from external_fixtures import require_files
 
 
 class TrackContextTests(unittest.TestCase):
@@ -21,6 +22,15 @@ class TrackContextTests(unittest.TestCase):
         context = contexts[0]
         self.assertEqual(context.animation_index, animation.index)
         self.assertLessEqual(context.frame_slot, context.hold_end_slot)
+    def setUp(self) -> None:
+        fixtures = {
+            "test_v4_contexts_preserve_track_and_holding_segment": ROOT / "sample_assets" / "anim_failure.bin",
+            "test_v3_contexts_share_same_track_projection": ROOT / "cross_game_assets" / "wc3" / "anim_gameover.bin",
+            "test_sprite_root_is_rejected": ROOT / "sample_assets" / "anim_failure.bin",
+        }
+        sample = fixtures.get(self._testMethodName)
+        if sample is not None:
+            require_files(self, sample, label="private BILE track fixture")
         self.assertIn(context.target_element_index, range(len(document.elements)))
         active = active_tracks_at_slot(document, animation.index, context.frame_slot)
         self.assertIn(context, active)

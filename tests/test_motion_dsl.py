@@ -14,6 +14,7 @@ from bile_workbench.motion_dsl import (
     proposal_template,
 )
 from bile_workbench.spine_workspace import create_pose_session, load_spine_static_workspace
+from external_fixtures import require_files
 
 ROOT = Path(__file__).resolve().parents[1]
 ZHENG2 = ROOT / "incoming/cross_era_20260822/征2测试/animation/[mini]effect_ui10.bin"
@@ -21,6 +22,7 @@ ZHENG2 = ROOT / "incoming/cross_era_20260822/征2测试/animation/[mini]effect_u
 
 class MotionDslTests(unittest.TestCase):
     def setUp(self) -> None:
+        require_files(self, ZHENG2, ZHENG2.with_suffix(".atlas"), label="private Spine 4.1 sample and atlas")
         self.workspace = load_spine_static_workspace(ZHENG2)
         self.pose_session = create_pose_session(self.workspace, "Wait")
         self.payload = proposal_template(self.pose_session)

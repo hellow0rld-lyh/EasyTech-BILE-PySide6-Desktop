@@ -11,6 +11,7 @@ from bile_workbench.assets import discover_triplet
 from bile_workbench.bile_format import parse_file
 from bile_workbench.preview_renderer import load_atlas
 from bile_workbench.workbench_state import Workspace
+from external_fixtures import require_triplet
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +24,9 @@ def _session() -> AnimationDocumentSession:
 
 
 class BileSceneProposalApplyTests(unittest.TestCase):
+    def setUp(self) -> None:
+        require_triplet(self, BIN)
+
     def test_stages_whitelisted_v4_proposal_without_source_mutation(self) -> None:
         before = BIN.read_bytes()
         session = _session()

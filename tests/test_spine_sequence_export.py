@@ -10,6 +10,7 @@ from PIL import Image
 
 from bile_workbench.spine_sequence_export import export_spine_pose_sequence
 from bile_workbench.spine_workspace import create_pose_session, load_spine_static_workspace
+from external_fixtures import require_files
 
 ROOT = Path(__file__).resolve().parents[1]
 EU7 = ROOT / "incoming/cross_era_20260822/欧7测试/animation/Arthur2.bin"
@@ -43,6 +44,7 @@ class SpinePoseSequenceExportTests(unittest.TestCase):
             return retained, evidence
 
     def test_zheng2_coverage_complete_pose_exports_gif_with_evidence(self) -> None:
+        require_files(self, ZHENG2, ZHENG2.with_suffix(".atlas"), label="private Zheng2 Spine sample and atlas")
         # 临时目录清理前直接检验动态帧；证据仍由上面的公共断言验证。
         workspace = load_spine_static_workspace(ZHENG2)
         session = create_pose_session(workspace, "Wait")
@@ -61,6 +63,7 @@ class SpinePoseSequenceExportTests(unittest.TestCase):
         self.assertEqual(before, _sha256(ZHENG2))
 
     def test_eu7_partial_pose_exports_apng_and_records_diagnostics(self) -> None:
+        require_files(self, EU7, EU7.with_suffix(".atlas"), label="private EU7 Spine sample and atlas")
         workspace = load_spine_static_workspace(EU7)
         session = create_pose_session(workspace, "Wait")
         before = _sha256(EU7)

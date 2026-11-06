@@ -1,7 +1,9 @@
 """BILE Workbench：高 DPI、深色 PySide6 动画读取与预览工作台。"""
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -10,6 +12,7 @@ from PySide6.QtCore import QEvent, QModelIndex, Qt, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence, QPixmap, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
     QDockWidget,
     QDoubleSpinBox,
     QFileDialog,
@@ -34,6 +37,7 @@ from PySide6.QtWidgets import (
 
 from .bile_format import BileDocument, BileFormatError, Element, parse_file
 from .candidate_workflow import CandidateWorkflow, CandidateWorkflowError
+from .project_workflow import ProjectWorkflowError, ProjectWorkflowService
 from .document_session import (
     AnimationDocumentSession,
     DocumentSessionError,
@@ -43,7 +47,7 @@ from .document_session import (
 )
 from .diagnostics import format_diagnostics
 from .edit_session import EditSession
-from .interchange import apply_patch, export_interchange
+from .interchange import apply_patch_report, export_interchange
 from .bile_scene_interchange import export_scene_interchange
 from .bile_scene_proposal import BileSceneProposalError, export_proposal_evidence as export_bile_scene_proposal_evidence, load_proposal, proposal_template as bile_scene_proposal_template
 from .bile_scene_proposal_apply import apply_scene_proposal
@@ -98,6 +102,9 @@ class MainWindow(QMainWindow):
         self.spine_pose_time = 0.0
         self.document_session: AnimationDocumentSession | None = None
         self.edit_session: EditSession | None = None  # 兼容既有候选工作流；编辑入口由 document_session.execute 驱动。
+        self.project_service: ProjectWorkflowService | None = None
+        self._project_snapshot = None
+        self._project_synced_patch_sha256: str | None = None
         self._unsubscribe_document_session = None
         self.selected_element: Element | None = None
         self._preview_element_index: int | None = None
@@ -146,6 +153,7 @@ class MainWindow(QMainWindow):
             self.document_status_label.setText(f"文档状态 · BILE v{snapshot.bile_version} · {mode} · {changes} · {selected}")
         self._refresh_productivity_context(snapshot)
         self._refresh_command_availability(snapshot)
+        self._refresh_project_status(snapshot)
         self._update_change_ledger()
         if hasattr(self, "status_document_label"):
             boundary = "只读" if not snapshot.editable else "保守写回"
@@ -161,8 +169,116 @@ class MainWindow(QMainWindow):
             else:
                 self.status_context_label.setText("未选择动画")
 
+    def _edit_session_fingerprint(self) -> str | None:
+        if self.edit_session is None:
+            return None
+        payload = json.dumps(
+            self.edit_session.patch_payload(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        return hashlib.sha256(payload).hexdigest()
+
+    def _refresh_project_status(
+        self,
+        snapshot: SessionSnapshot | None = None,
+        *,
+        force: bool = False,
+    ) -> None:
+        if not hasattr(self, "project_status_label"):
+            return
+        if self.project_service is None:
+            self._project_snapshot = None
+            self.project_status_label.setText("Project · 未打开")
+            return
+        if force or self._project_snapshot is None:
+            try:
+                self._project_snapshot = self.project_service.inspect()
+            except (OSError, ProjectWorkflowError, ValueError) as exc:
+                self._project_snapshot = None
+                self.project_status_label.setText(f"Project · 校验失败：{exc}")
+                return
+        project = self._project_snapshot
+        if project is None:
+            self.project_status_label.setText("Project · 状态不可用")
+            return
+        candidate_labels = {
+            "NotConfigured": "未设置候选",
+            "Missing": "候选未生成",
+            "Current": "候选有效",
+            "CurrentUntracked": "候选有效（未登记）",
+            "Stale": "候选已过期",
+            "Invalid": "候选无效",
+        }
+        candidate = candidate_labels.get(project.candidate.status, project.candidate.status)
+        try:
+            fingerprint = self._edit_session_fingerprint()
+        except (TypeError, ValueError):
+            fingerprint = None
+            sync_state = "暂存状态不可序列化"
+        else:
+            if fingerprint is None:
+                sync_state = "无编辑会话"
+            elif fingerprint == self._project_synced_patch_sha256:
+                sync_state = "暂存状态已同步"
+            elif snapshot is not None and snapshot.dirty:
+                sync_state = "有暂存编辑待同步"
+            else:
+                sync_state = "会话状态待同步"
+        self.project_status_label.setText(
+            f"Project · {project.project_id} · Edit Set {project.operation_count} 项 · "
+            f"{candidate} · {sync_state}"
+        )
+
+    def _sync_project_before_workspace_switch(self, *, confirmed: bool = False) -> bool:
+        """切换或关闭当前工作区前，禁止静默丢弃尚未写入 Project 的编辑。"""
+        if (
+            self.project_service is None
+            or self.edit_session is None
+            or self.document_session is None
+        ):
+            return True
+        try:
+            fingerprint = self._edit_session_fingerprint()
+        except (TypeError, ValueError) as exc:
+            QMessageBox.critical(self, "Project 状态不可用", f"无法计算暂存编辑指纹：{exc}")
+            return False
+        if fingerprint == self._project_synced_patch_sha256:
+            return True
+        if not confirmed:
+            answer = QMessageBox.question(
+                self,
+                "Project 存在未同步编辑",
+                "当前 Project 绑定的文档存在尚未同步的暂存编辑。"
+                "继续切换或关闭工作区会替换当前编辑会话。\n\n"
+                "是否先将这些编辑同步到当前 Project？\n"
+                "选择“否”将取消本次操作。",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                return False
+        try:
+            self.project_service.sync_edit_session(self.edit_session)
+            self._project_synced_patch_sha256 = self._edit_session_fingerprint()
+            self._project_snapshot = self.project_service.inspect()
+            self._refresh_project_status(self.document_session.snapshot)
+            return True
+        except (OSError, ProjectWorkflowError, ValueError) as exc:
+            QMessageBox.critical(self, "Project 同步失败", str(exc))
+            return False
+
     def _build_actions(self) -> None:
         self.open_action = QAction("打开 BILE…", self, shortcut=QKeySequence.StandardKey.Open, triggered=self.open_bin_dialog)
+        self.new_project_action = QAction("从当前 BILE 新建 Project…", self, triggered=self.new_project_dialog)
+        self.open_project_action = QAction("打开 Project…", self, triggered=self.open_project_dialog)
+        self.sync_project_action = QAction("同步暂存编辑到 Project", self, shortcut="Ctrl+Shift+S", triggered=self.sync_project_dialog)
+        self.choose_project_candidate_action = QAction("设置候选 BIN 路径…", self, triggered=self.choose_project_candidate_dialog)
+        self.build_project_candidate_action = QAction("编译 Project 候选 BIN…", self, shortcut="Ctrl+Alt+B", triggered=self.build_project_candidate_dialog)
+        self.validate_project_candidate_action = QAction("验证 Project 候选 BIN", self, triggered=self.validate_project_candidate_dialog)
+        self.project_history_action = QAction("查看 Project 操作历史…", self, triggered=self.show_project_history_dialog)
         self.open_spine_action = QAction("打开 Spine 静态资源…", self, triggered=self.open_spine_dialog)
         self.export_spine_static_action = QAction("导出 Spine 结构与动画档案…", self, triggered=self.export_spine_static_dialog)
         self.export_spine_pose_sequence_action = QAction("导出 Spine 只读 pose 序列…", self, triggered=self.export_spine_pose_sequence_dialog)
@@ -248,6 +364,16 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self.export_diagnostics_action)
         file_menu.addSeparator()
         file_menu.addAction(self.exit_action)
+        project_menu = self.menuBar().addMenu("工程")
+        project_menu.addAction(self.new_project_action)
+        project_menu.addAction(self.open_project_action)
+        project_menu.addSeparator()
+        project_menu.addAction(self.sync_project_action)
+        project_menu.addAction(self.choose_project_candidate_action)
+        project_menu.addAction(self.build_project_candidate_action)
+        project_menu.addAction(self.validate_project_candidate_action)
+        project_menu.addSeparator()
+        project_menu.addAction(self.project_history_action)
         edit_menu = self.menuBar().addMenu("编辑")
         edit_menu.addAction(self.undo_action)
         edit_menu.addAction(self.redo_action)
@@ -296,6 +422,11 @@ class MainWindow(QMainWindow):
         self.document_status_label.setProperty("muted", True)
         self.document_status_label.setObjectName("DocumentStatusLabel")
         central_layout.addWidget(self.document_status_label)
+        self.project_status_label = QLabel("Project · 未打开")
+        self.project_status_label.setObjectName("ProjectStatusLabel")
+        self.project_status_label.setProperty("muted", True)
+        self.project_status_label.setWordWrap(True)
+        central_layout.addWidget(self.project_status_label)
         self.plugin_badge = QFrame()
         self.plugin_badge.setObjectName("PluginBadge")
         self.plugin_badge.setMaximumHeight(66)
@@ -347,8 +478,10 @@ class MainWindow(QMainWindow):
         central_layout.setStretch(0, 0)
         central_layout.setStretch(1, 0)
         central_layout.setStretch(2, 0)
-        central_layout.setStretch(3, 1)
+        central_layout.setStretch(3, 0)
         central_layout.setStretch(4, 0)
+        central_layout.setStretch(5, 1)
+        central_layout.setStretch(6, 0)
         self.setCentralWidget(central)
 
         self._build_resource_dock()
@@ -676,6 +809,14 @@ class MainWindow(QMainWindow):
             action.setEnabled(animation_selected or spine_pose_ready)
         for action in (self.save_pending_action, self.clear_pending_action, self.candidate_diff_action, self.track_impact_action, self.experiment_package_action, self.create_regression_case_action):
             action.setEnabled(editable and dirty)
+        project_open = self.project_service is not None
+        self.new_project_action.setEnabled(editable and snapshot is not None)
+        self.open_project_action.setEnabled(True)
+        self.sync_project_action.setEnabled(project_open and editable)
+        self.choose_project_candidate_action.setEnabled(project_open)
+        self.build_project_candidate_action.setEnabled(project_open and editable)
+        self.validate_project_candidate_action.setEnabled(project_open)
+        self.project_history_action.setEnabled(project_open)
         self.undo_action.setEnabled(editable and can_undo)
         self.redo_action.setEnabled(editable and can_redo)
         self.composition_experiment_action.setEnabled(animation_selected)
@@ -920,6 +1061,7 @@ class MainWindow(QMainWindow):
         self._preview_element_index = None
         self._populate_inspector(None)
         self._refresh_command_availability()
+        self._refresh_project_status()
 
     def _set_editor_enabled(self, keyframe: bool, anchor: bool) -> None:
         self.keyframe_spin.setEnabled(keyframe)
@@ -994,16 +1136,352 @@ class MainWindow(QMainWindow):
         if self.document_session is not None and self.document_session.redo():
             self._restore_session_preview(f"已重做；待提交变更 {self.document_session.snapshot.change_count} 项。")
 
+    def new_project_dialog(self) -> None:
+        if self.workspace is None or self.edit_session is None or self.document_session is None:
+            QMessageBox.information(self, "无法新建 Project", "请先打开一个 BILE v3/v4 三件套。")
+            return
+        if not self.document_session.snapshot.editable:
+            QMessageBox.information(self, "当前资源只读", "BILE v2 当前只支持 reference-only Project，不能创建可编辑工程。")
+            return
+        parent = QFileDialog.getExistingDirectory(
+            self, "选择 Project 保存位置", str(self.workspace.bin_path.parent)
+        )
+        if not parent:
+            return
+        project_dir = Path(parent) / f"{self.workspace.bin_path.stem}.bileproj"
+        if project_dir.exists() or project_dir.is_symlink():
+            QMessageBox.warning(
+                self, "Project 已存在", f"为避免覆盖已有工程，请选择其他目录：\n{project_dir}"
+            )
+            return
+        try:
+            service = ProjectWorkflowService.import_source(
+                self.workspace.bin_path,
+                project_dir,
+                xml_path=self.workspace.xml_path,
+                texture_path=self.workspace.image_path,
+            )
+            operations = service.sync_edit_session(self.edit_session)
+            self.project_service = service
+            self._project_snapshot = service.inspect()
+            self._project_synced_patch_sha256 = self._edit_session_fingerprint()
+            self._refresh_project_status(self.document_session.snapshot)
+            self._refresh_command_availability(self.document_session.snapshot)
+            QMessageBox.information(
+                self,
+                "Project 已创建",
+                f"工程目录：{project_dir}\n"
+                f"已同步字段操作：{len(operations)} 项\n"
+                f"Project 当前操作总数：{service.inspect().operation_count}\n\n"
+                "Project 只引用原始 BIN/XML/纹理，不复制或修改源资源。",
+            )
+        except (OSError, ProjectWorkflowError, ValueError) as exc:
+            QMessageBox.critical(self, "Project 创建失败", str(exc))
+
+    def open_project_dialog(self) -> None:
+        initial_dir = (
+            str(self.workspace.bin_path.parent)
+            if self.workspace is not None
+            else str(Path.home())
+        )
+        project_dir = QFileDialog.getExistingDirectory(
+            self, "打开 BILE Project", initial_dir
+        )
+        if not project_dir:
+            return
+        try:
+            service = ProjectWorkflowService(project_dir)
+            project = service.inspect()
+            source_path = Path(project.source_path).resolve(strict=True)
+            current_source = (
+                self.workspace.bin_path.resolve(strict=True)
+                if self.workspace is not None
+                else None
+            )
+            same_source = (
+                current_source is not None
+                and os.path.normcase(str(source_path)) == os.path.normcase(str(current_source))
+            )
+            if not same_source:
+                if (
+                    self.document_session is not None
+                    and self.document_session.snapshot.dirty
+                    and self.project_service is None
+                ):
+                    answer = QMessageBox.question(
+                        self,
+                        "替换当前暂存编辑",
+                        "当前文档存在尚未保存到 Project 的暂存编辑。"
+                        "打开另一个 Project 将放弃这些修改，是否继续？",
+                        QMessageBox.Yes | QMessageBox.No,
+                        QMessageBox.No,
+                    )
+                    if answer != QMessageBox.Yes:
+                        return
+                self.load_workspace(source_path)
+                if (
+                    self.workspace is None
+                    or os.path.normcase(str(self.workspace.bin_path.resolve())) != os.path.normcase(str(source_path))
+                ):
+                    return
+            if self.workspace is None or self.edit_session is None or self.document_session is None:
+                QMessageBox.warning(
+                    self, "Project source 不可用",
+                    "Project 对应的 BILE 工作区未能加载。请检查原始 BIN、同名 XML 与 WebP/PNG 图集。",
+                )
+                return
+
+            probe = EditSession(self.workspace.bin_path)
+            try:
+                service.restore_edit_session(probe)
+            finally:
+                probe.close()
+
+            if self.edit_session.dirty:
+                answer = QMessageBox.question(
+                    self,
+                    "替换当前暂存编辑",
+                    "当前文档存在尚未同步的暂存编辑。打开 Project 将以工程 Edit Set 替换这些编辑，是否继续？",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if answer != QMessageBox.Yes:
+                    return
+                self.document_session.clear_edits()
+
+            restored = service.restore_edit_session(self.edit_session)
+            self.project_service = service
+            self._project_snapshot = project
+            self._project_synced_patch_sha256 = self._edit_session_fingerprint()
+            self.document_session.refresh()
+            self._refresh_command_availability(self.document_session.snapshot)
+            self.statusBar().showMessage(
+                f"已打开 Project：{project.project_id}；恢复 {len(restored)} 个有效字段。"
+            )
+        except (OSError, ProjectWorkflowError, ValueError) as exc:
+            QMessageBox.critical(self, "Project 打开失败", str(exc))
+
+    def sync_project_dialog(self) -> None:
+        if self.project_service is None or self.edit_session is None or self.document_session is None:
+            QMessageBox.information(self, "尚未打开 Project", "请先新建或打开一个 Project。")
+            return
+        try:
+            operations = self.project_service.sync_edit_session(self.edit_session)
+            self._project_synced_patch_sha256 = self._edit_session_fingerprint()
+            project = self.project_service.inspect()
+            self._project_snapshot = project
+            self._refresh_project_status(self.document_session.snapshot)
+            self.statusBar().showMessage(
+                f"Project 已同步：新增 {len(operations)} 项操作；Edit Set 共 {project.operation_count} 项。"
+            )
+            QMessageBox.information(
+                self,
+                "Project 已保存",
+                f"本次新增操作：{len(operations)} 项\n"
+                f"Edit Set 操作总数：{project.operation_count}\n"
+                f"候选状态：{project.candidate.status}\n\n"
+                "同步只更新 Project 的 Edit Set 元数据，不写回原始 BIN。",
+            )
+        except (OSError, ProjectWorkflowError, ValueError) as exc:
+            QMessageBox.critical(self, "Project 同步失败", str(exc))
+
+    def choose_project_candidate_dialog(self) -> None:
+        if self.project_service is None:
+            QMessageBox.information(self, "尚未打开 Project", "请先新建或打开一个 Project。")
+            return
+        default = (
+            self.workspace.bin_path.with_name(f"{self.workspace.bin_path.stem}_candidate.bin")
+            if self.workspace is not None
+            else Path(self.project_service.inspect().project_dir).with_name("candidate.bin")
+        )
+        path, _ = QFileDialog.getSaveFileName(
+            self, "设置 Project 候选 BIN 输出路径", str(default), "BILE Candidate (*.bin)"
+        )
+        if not path:
+            return
+        try:
+            project = self.project_service.set_candidate_path(path)
+            self._project_snapshot = project
+            self._refresh_project_status()
+            if project.candidate.status == "Invalid":
+                QMessageBox.warning(
+                    self, "候选路径不可用",
+                    project.candidate.message or "候选路径未通过检查。",
+                )
+            else:
+                self.statusBar().showMessage(f"候选 BIN 路径已设置：{project.candidate.path}")
+        except (OSError, ProjectWorkflowError, ValueError) as exc:
+            QMessageBox.critical(self, "设置候选路径失败", str(exc))
+
+    def build_project_candidate_dialog(self) -> None:
+        if self.project_service is None or self.edit_session is None:
+            QMessageBox.information(self, "尚未打开 Project", "请先新建或打开一个 Project。")
+            return
+        try:
+            project = self.project_service.inspect()
+            if project.candidate.path is None:
+                self.choose_project_candidate_dialog()
+                project = self.project_service.inspect()
+                if project.candidate.path is None:
+                    return
+            candidate_path = Path(project.candidate.path)
+            overwrite = candidate_path.exists()
+            if overwrite:
+                answer = QMessageBox.question(
+                    self,
+                    "确认重新编译候选",
+                    f"候选文件已存在：\n{candidate_path}\n"
+                    f"当前状态：{project.candidate.status}\n\n"
+                    "是否明确允许原子替换该候选？",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if answer != QMessageBox.Yes:
+                    return
+            if self.workspace is not None:
+                preflight = run_preflight(self.edit_session, self.workspace.atlas)
+                if preflight.has_errors:
+                    QMessageBox.warning(
+                        self, "Project 候选预检未通过",
+                        f"{preflight.text}\n\n请先修复预检错误，再编译候选。",
+                    )
+                    return
+            operations = self.project_service.sync_edit_session(self.edit_session)
+            self._project_synced_patch_sha256 = self._edit_session_fingerprint()
+            build = self.project_service.compile_candidate(
+                candidate_path, overwrite=overwrite
+            )
+            self._project_snapshot = build.snapshot
+            self._refresh_project_status()
+            report = build.validation
+            QMessageBox.information(
+                self,
+                "Project 候选编译完成",
+                f"候选：{report.candidate_path}\n"
+                f"离线验证：{report.status}\n"
+                f"Edit Set 操作总数：{report.operation_count}\n"
+                f"本次新增操作：{len(operations)}\n"
+                f"变化字节：{report.changed_byte_count}\n"
+                f"SHA-256：{report.candidate_sha256}\n\n"
+                "注意：OfflineValid 只代表离线结构与 Edit Set 一致性通过；"
+                "原游戏验证状态仍为 NotPerformed。",
+            )
+        except (OSError, ProjectWorkflowError, ValueError) as exc:
+            QMessageBox.critical(self, "Project 候选编译失败", str(exc))
+
+    def validate_project_candidate_dialog(self) -> None:
+        if self.project_service is None:
+            QMessageBox.information(self, "尚未打开 Project", "请先新建或打开一个 Project。")
+            return
+        try:
+            if (
+                self._edit_session_fingerprint() != self._project_synced_patch_sha256
+            ):
+                QMessageBox.warning(
+                    self, "当前暂存编辑尚未同步",
+                    "当前编辑会话与 Project Edit Set 不一致。请先同步编辑并重新编译候选，再执行验证。",
+                )
+                return
+            project = self.project_service.inspect()
+            self._project_snapshot = project
+            if self.workspace is not None and self.edit_session is not None:
+                preflight = run_preflight(self.edit_session, self.workspace.atlas)
+                if preflight.has_errors:
+                    QMessageBox.warning(
+                        self, "候选预检未通过",
+                        f"{preflight.text}\n\n请先修复预检错误，再验证候选。",
+                    )
+                    return
+            if project.candidate.status in {"NotConfigured", "Missing"}:
+                QMessageBox.information(
+                    self, "没有可验证的候选 BIN",
+                    project.candidate.message or "请先设置候选 BIN 路径并完成编译。",
+                )
+                return
+            if project.candidate.status == "Stale":
+                QMessageBox.warning(
+                    self, "候选已经过期",
+                    "Project/Edit Set 已变化。请重新编译候选，不要把旧候选当作当前版本使用。",
+                )
+                return
+            if project.candidate.status == "Invalid":
+                QMessageBox.warning(
+                    self, "候选当前无效",
+                    project.candidate.message or "候选或追踪清单未通过检查。",
+                )
+                return
+            report = self.project_service.validate_candidate()
+            self._project_snapshot = self.project_service.inspect()
+            self._refresh_project_status()
+            QMessageBox.information(
+                self,
+                "候选规范验证完成",
+                f"状态：{report.status}\n"
+                f"候选 SHA-256：{report.candidate_sha256}\n"
+                f"变化字节：{report.changed_byte_count}\n"
+                f"Edit Set 操作：{report.operation_count}\n"
+                f"原游戏验证：{report.original_game_validation}\n\n"
+                "该报告不替代原游戏中的实际运行回归。",
+            )
+        except (OSError, ProjectWorkflowError, ValueError) as exc:
+            QMessageBox.critical(self, "候选验证失败", str(exc))
+
+    def show_project_history_dialog(self) -> None:
+        if self.project_service is None:
+            QMessageBox.information(self, "尚未打开 Project", "请先新建或打开一个 Project。")
+            return
+        try:
+            history = self.project_service.operation_history()
+            if not history:
+                QMessageBox.information(self, "Project 操作历史", "当前 Edit Set 为空。")
+                return
+            lines = []
+            for operation in history[-100:]:
+                target = operation["target"]
+                before = json.dumps(operation["before"], ensure_ascii=False, separators=(",", ":"))
+                after = json.dumps(operation["after"], ensure_ascii=False, separators=(",", ":"))
+                lines.append(
+                    f"{operation['sequence']:04d}  {target['section']}[{target['index']}].{operation['field']}\n"
+                    f"       {before}  →  {after}"
+                )
+            if len(history) > 100:
+                lines.insert(0, f"仅显示最近 100 / {len(history)} 项操作。")
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Project 操作历史")
+            dialog.resize(760, 540)
+            layout = QVBoxLayout(dialog)
+            history_view = QPlainTextEdit(dialog)
+            history_view.setReadOnly(True)
+            history_view.setPlainText("\n".join(lines))
+            layout.addWidget(history_view, 1)
+            close_button = QPushButton("关闭", dialog)
+            close_button.clicked.connect(dialog.accept)
+            layout.addWidget(close_button)
+            dialog.exec()
+        except (OSError, ProjectWorkflowError, ValueError) as exc:
+            QMessageBox.critical(self, "读取 Project 操作历史失败", str(exc))
+
     def _candidate_workflow(self) -> CandidateWorkflow:
         if self.workspace is None or self.edit_session is None:
             raise CandidateWorkflowError("尚未加载可编辑的 BILE 三件套")
-        return CandidateWorkflow(
+        workflow = CandidateWorkflow(
             self.workspace.bin_path,
             self.workspace.xml_path,
             self.workspace.image_path,
             self.workspace.atlas,
             self.edit_session,
+            project_service=self.project_service,
         )
+        if self.project_service is not None:
+            workflow.require_preflight()
+            try:
+                self.project_service.sync_edit_session(self.edit_session)
+                self._project_synced_patch_sha256 = self._edit_session_fingerprint()
+                self._project_snapshot = self.project_service.inspect()
+                self._refresh_project_status()
+            except ProjectWorkflowError as exc:
+                raise CandidateWorkflowError(str(exc)) from exc
+        return workflow
 
     def create_candidate_diff_dialog(self) -> None:
         if self.workspace is None or self.edit_session is None or not self.edit_session.dirty or self.selected_element is None or self.selected_element.has_texture:
@@ -1312,10 +1790,37 @@ class MainWindow(QMainWindow):
         output_path, _ = QFileDialog.getSaveFileName(self, "另存修改后的 BIN", str(self.workspace.bin_path.with_stem(self.workspace.bin_path.stem + "_edited")), "BILE Animation (*.bin)")
         if not output_path:
             return
+        overwrite = False
+        if Path(output_path).exists():
+            answer = QMessageBox.question(
+                self,
+                "确认覆盖候选文件",
+                f"文件已存在：\n{output_path}\n\n是否原子替换？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                return
+            overwrite = True
         try:
-            apply_patch(self.workspace.bin_path, patch_path, output_path)
-            self.statusBar().showMessage(f"补丁已验证并写入：{Path(output_path).name}")
-            QMessageBox.information(self, "补丁已写入", "已完成结构重解析验证。请在原游戏中继续回归该实验文件。")
+            report = apply_patch_report(
+                self.workspace.bin_path,
+                patch_path,
+                output_path,
+                overwrite=overwrite,
+            )
+            changed_count = len(report.changed_byte_offsets)
+            self.statusBar().showMessage(
+                f"补丁已验证并写入：{Path(output_path).name}；变化字节 {changed_count}"
+            )
+            QMessageBox.information(
+                self,
+                "补丁已写入",
+                f"已完成 expected-old、精确 changed-byte set 与结构重解析验证。\n"
+                f"变化字节：{changed_count}\n"
+                f"候选 SHA-256：{report.output_sha256}\n\n"
+                "请在原游戏中继续回归该实验文件。",
+            )
         except (OSError, BileFormatError, ValueError) as exc:
             QMessageBox.critical(self, "补丁被拒绝", str(exc))
 
@@ -1390,7 +1895,13 @@ class MainWindow(QMainWindow):
     def load_spine_workspace(self, bin_path: Path) -> None:
         try:
             spine = load_spine_static_workspace(bin_path)
+            if not self._sync_project_before_workspace_switch():
+                return
             self._detach_bile_session()
+            self.project_service = None
+            self._project_snapshot = None
+            self._project_synced_patch_sha256 = None
+            self._refresh_project_status()
             self.spine_workspace = spine
             self.spine_pose_session = None
             self.motion_proposal_session = None
@@ -1660,6 +2171,15 @@ class MainWindow(QMainWindow):
 
     def load_workspace(self, bin_path: Path) -> None:
         try:
+            stem = bin_path.with_suffix("")
+            xml_path = stem.with_suffix(".xml")
+            image_path = next((candidate for candidate in (stem.with_suffix(".webp"), stem.with_suffix(".png")) if candidate.exists()), None)
+            if not xml_path.exists() or image_path is None:
+                raise FileNotFoundError("未找到同名 XML 或 WebP/PNG 图集")
+            document = parse_file(bin_path)
+            atlas = load_atlas(xml_path, image_path)
+            if not self._sync_project_before_workspace_switch():
+                return
             self.active_bile_scene_proposal = None
             self.spine_workspace = None
             self.spine_selected_region = None
@@ -1669,21 +2189,37 @@ class MainWindow(QMainWindow):
             self.spine_pose_time = 0.0
             self.spine_timeline_inspector.clear()
             self.edit_panel.setEnabled(True)
-            stem = bin_path.with_suffix("")
-            xml_path = stem.with_suffix(".xml")
-            image_path = next((candidate for candidate in (stem.with_suffix(".webp"), stem.with_suffix(".png")) if candidate.exists()), None)
-            if not xml_path.exists() or image_path is None:
-                raise FileNotFoundError("未找到同名 XML 或 WebP/PNG 图集")
-            document = parse_file(bin_path)
-            atlas = load_atlas(xml_path, image_path)
             if self._unsubscribe_document_session is not None:
                 self._unsubscribe_document_session()
                 self._unsubscribe_document_session = None
             if self.document_session is not None:
                 self.document_session.close()
             self.workspace = Workspace.create(bin_path, xml_path, image_path, document, atlas)
+            if self.project_service is not None:
+                try:
+                    project_source = Path(self.project_service.inspect().source_path).resolve(strict=True)
+                    current_source = self.workspace.bin_path.resolve(strict=True)
+                    if os.path.normcase(str(project_source)) != os.path.normcase(str(current_source)):
+                        self.project_service = None
+                        self._project_snapshot = None
+                        self._project_synced_patch_sha256 = None
+                except (OSError, ProjectWorkflowError, ValueError):
+                    self.project_service = None
+                    self._project_snapshot = None
+                    self._project_synced_patch_sha256 = None
             self.document_session = AnimationDocumentSession(self.workspace)
             self.edit_session = self.document_session.edit_session
+            if self.project_service is not None:
+                try:
+                    self.project_service.restore_edit_session(self.edit_session)
+                    self._project_snapshot = self.project_service.inspect()
+                    self._project_synced_patch_sha256 = self._edit_session_fingerprint()
+                    self.document_session.refresh()
+                except (OSError, ProjectWorkflowError, ValueError) as exc:
+                    self.project_service = None
+                    self._project_snapshot = None
+                    self._project_synced_patch_sha256 = None
+                    self.statusBar().showMessage(f"Project 状态未能恢复，已与当前文档解除绑定：{exc}")
             self._unsubscribe_document_session = self.document_session.subscribe(self._on_document_snapshot)
             self.formation_config_text = ""
             self._update_diagnostics()
@@ -2048,6 +2584,26 @@ class MainWindow(QMainWindow):
         self.set_slot(0 if self.slot_slider.value() >= max_slot else self.slot_slider.value() + 1)
 
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
+        if (
+            self.project_service is not None
+            and self.edit_session is not None
+            and self._edit_session_fingerprint() != self._project_synced_patch_sha256
+        ):
+            answer = QMessageBox.question(
+                self,
+                "退出前同步 Project",
+                "当前 Project 有尚未同步的编辑。\n\n"
+                "选择“是”先同步并退出；选择“否”放弃未同步编辑并退出；"
+                "选择“取消”返回工作区。",
+                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+                QMessageBox.Cancel,
+            )
+            if answer == QMessageBox.Cancel:
+                event.ignore()
+                return
+            if answer == QMessageBox.Yes and not self._sync_project_before_workspace_switch(confirmed=True):
+                event.ignore()
+                return
         if self._unsubscribe_document_session is not None:
             self._unsubscribe_document_session()
             self._unsubscribe_document_session = None

@@ -9,9 +9,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 from bile_workbench.animation_evidence import build_animation_evidence, write_animation_evidence
 from bile_workbench.bile_format import parse_file
+from external_fixtures import require_files
 
 
 class AnimationEvidenceTests(unittest.TestCase):
+    def setUp(self) -> None:
+        require_files(self, ROOT / "sample_assets" / "anim_failure.bin", label="private BILE evidence sample")
+
     def test_builds_static_slot_coverage_and_keyframe_reuse_audit(self) -> None:
         document = parse_file(ROOT / "sample_assets" / "anim_failure.bin")
         animation = document.animations[0]
