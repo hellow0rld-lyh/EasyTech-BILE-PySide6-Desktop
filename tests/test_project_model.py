@@ -109,6 +109,21 @@ class ProjectModelTests(unittest.TestCase):
         self.assertTrue(manifest["compiler"]["candidateOnly"])
         self.assertFalse(manifest["compiler"]["inPlaceWrite"])
 
+    def test_project_internal_paths_reject_windows_rooted_and_drive_relative_paths(self) -> None:
+        from bile_workbench.project_model import _relative_project_file
+
+        normal = _relative_project_file(self.project, "metadata/edit-set.json", "test path")
+        self.assertEqual(normal, self.project / "metadata" / "edit-set.json")
+        for value in (
+            r"\outside.json",
+            r"D:outside.json",
+            r"D:\outside.json",
+            r"..\outside.json",
+        ):
+            with self.subTest(value=value):
+                with self.assertRaises(ProjectModelError):
+                    _relative_project_file(self.project, value, "test path")
+
     def test_import_references_optional_assets_without_copying_them(self) -> None:
         xml = self.source.with_suffix(".xml")
         texture = self.source.with_suffix(".webp")

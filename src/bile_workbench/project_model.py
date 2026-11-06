@@ -14,7 +14,7 @@ import struct
 import tempfile
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from .bile_format import RECORD_WIDTHS, V2_RECORD_WIDTHS
@@ -109,7 +109,16 @@ def _relative_project_file(root: Path, value: Any, label: str) -> Path:
     if not isinstance(value, str) or not value:
         raise ProjectModelError(f"{label} 必须是非空相对路径")
     relative = Path(value)
-    if relative.is_absolute() or ".." in relative.parts:
+    windows_relative = PureWindowsPath(value)
+    if (
+        relative.is_absolute()
+        or relative.drive
+        or relative.root
+        or ".." in relative.parts
+        or windows_relative.drive
+        or windows_relative.root
+        or ".." in windows_relative.parts
+    ):
         raise ProjectModelError(f"{label} 不允许绝对路径或目录穿越")
     target = root / relative
     if target.is_symlink():
